@@ -1,4 +1,4 @@
-package com.su26isc301.backend.dto;
+package com.su26isc301.backend.dto.response;
 
 import lombok.Data;
 import lombok.AllArgsConstructor;

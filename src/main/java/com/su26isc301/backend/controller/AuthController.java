@@ -1,7 +1,7 @@
 package com.su26isc301.backend.controller;
 
-import com.su26isc301.backend.dto.AuthResponse;
-import com.su26isc301.backend.dto.RefreshTokenRequest;
+import com.su26isc301.backend.dto.response.AuthResponse;
+import com.su26isc301.backend.dto.request.RefreshTokenRequest;
 import com.su26isc301.backend.service.JwtService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
