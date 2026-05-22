@@ -1,14 +1,11 @@
 package com.su26isc301.backend.controller;
 
-import com.su26isc301.backend.dto.RefreshTokenRequest;
 import com.su26isc301.backend.service.JwtService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
 
