@@ -6,6 +6,7 @@ import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.AuthResponse;
 import com.su26isc301.backend.dto.request.RefreshTokenRequest;
 import com.su26isc301.backend.entity.Profile;
+import com.su26isc301.backend.enums.Roles;
 import com.su26isc301.backend.repository.ProfileRepository;
 import com.su26isc301.backend.service.JwtService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -66,15 +67,30 @@ public class AuthController {
             Map<String, Object> responseBody = response.getBody();
 
             // 3. Trích xuất ID (UUID) từ Supabase trả về
-            String supabaseUserId = (String) responseBody.get("id");
+//            String supabaseUserId = (String) responseBody.get("id");
+            String supabaseUserId = null;
 
-            // 4. Lưu thông tin Profile vào Database của bạn
+            // Kiểm tra xem ID có nằm trong object "user" không
+            if (responseBody.containsKey("user") && responseBody.get("user") instanceof Map) {
+                Map<String, Object> userMap = (Map<String, Object>) responseBody.get("user");
+                supabaseUserId = (String) userMap.get("id");
+            } else {
+                supabaseUserId = (String) responseBody.get("id");
+            }
+            if (supabaseUserId == null) {
+                return ResponseEntity.internalServerError().body(
+                        Map.of("error", "Không thể lấy ID từ Supabase. Response: " + responseBody)
+                );
+            }
+            // 4. Lưu thông tin Profile vào Database
             Profile newProfile = Profile.builder()
                     .id(UUID.fromString(supabaseUserId))
                     .email(request.getEmail())
                     .phone(request.getPhone())
                     .fullName(request.getFullName())
                     .dateOfBirth(request.getDateOfBirth())
+                    .role(Roles.customer)
+                    .isActive(true)
                     .build();
             profileRepository.save(newProfile);
 
@@ -111,7 +127,7 @@ public class AuthController {
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             Map<String, String> body = Map.of(
-                    "email", loginEmail, // Dùng email đã được phân giải ở trên
+                    "email", loginEmail,
                     "password", request.getPassword()
             );
             HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
