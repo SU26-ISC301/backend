@@ -159,17 +159,20 @@ public class AuthController {
         try {
         String token = authHeader.substring(7);
         String userId = jwtService.extractUserId(token);
-//        String email = jwtService.extractEmail(token);
-//        String role = jwtService.extractRole(token);
-//
-//        return ResponseEntity.ok(Map.of(
-//                "userId", userId,
-//                "email", email,
-//                "role", role != null ? role : "authenticated"
-//        ));
-            Profile profile = profileRepository.findById(UUID.fromString(userId))
-                    .orElseThrow(() -> new RuntimeException("Không tìm thấy hồ sơ người dùng"));
-
+        String email = jwtService.extractEmail(token);
+        String role = jwtService.extractRole(token);
+        Profile profile = profileRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy hồ sơ người dùng"));
+        Map<String, Object> customResponse = Map.of(
+                "userId", userId,
+                "emailFromToken", email != null ? email : profile.getEmail(),
+                "roleFromToken", role != null ? role : "???",
+                "fullName", profile.getFullName() != null ? profile.getFullName() : "",
+                "phone", profile.getPhone() != null ? profile.getPhone() : "",
+                "roleInDb", profile.getRole() != null ? profile.getRole() : "",
+                "isActive", profile.getIsActive() != null ? profile.getIsActive() : false,
+                "createdAt", profile.getCreatedAt() != null ? profile.getCreatedAt() : ""
+        );
             return ResponseEntity.ok(ApiResponse.success("Lấy thông tin thành công", profile));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error("Phiên đăng nhập không hợp lệ hoặc đã hết hạn"));
