@@ -48,6 +48,10 @@ public class AuthController {
             if (profileRepository.findByEmail(request.getEmail()).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Email đã được sử dụng"));
             }
+            if (profileRepository.findByPhone(request.getPhone()).isPresent()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Số điện thoại đã được sử dụng"));
+            }
 
             // 2. Gọi API của Supabase để tạo User trong auth.users
             RestTemplate restTemplate = new RestTemplate();
