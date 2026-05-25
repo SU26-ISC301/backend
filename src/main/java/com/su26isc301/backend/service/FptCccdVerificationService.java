@@ -1,6 +1,8 @@
 package com.su26isc301.backend.service;
 
 import com.su26isc301.backend.dto.response.CccdVerificationResponse;
+import com.su26isc301.backend.dto.response.CccdFaceVerificationResponse;
+import com.su26isc301.backend.dto.response.FaceMatchResult;
 import com.su26isc301.backend.dto.response.FptCccdOcrResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +21,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,7 +42,35 @@ public class FptCccdVerificationService {
     @Value("${fpt.ai.api-key-header:api_key}")
     private String apiKeyHeader;
 
+    @Value("${fpt.ai.facematch.endpoint:https://api.fpt.ai/dmp/checkface/v1}")
+    private String faceMatchEndpoint;
+
+    @Value("${fpt.ai.facematch.api-key-header:api_key}")
+    private String faceMatchApiKeyHeader;
+
     private final RestTemplate restTemplate = new RestTemplate();
+
+    public CccdFaceVerificationResponse verifyWithFace(
+            MultipartFile frontImage,
+            MultipartFile backImage,
+            MultipartFile faceImage
+    ) {
+        CccdVerificationResponse cccd = verify(frontImage, backImage);
+
+        FaceMatchResult faceMatch = null;
+        if (cccd.isVerified()) {
+            validateImage(faceImage, "faceImage");
+            faceMatch = matchFaces(frontImage, faceImage);
+        }
+
+        boolean verified = cccd.isVerified() && faceMatch != null && faceMatch.isSuccess() && faceMatch.isMatch();
+        return CccdFaceVerificationResponse.builder()
+                .verified(verified)
+                .message(buildFullVerificationMessage(cccd, faceMatch))
+                .cccd(cccd)
+                .faceMatch(faceMatch)
+                .build();
+    }
 
     public CccdVerificationResponse verify(MultipartFile frontImage, MultipartFile backImage) {
         validateConfig();
@@ -62,6 +93,47 @@ public class FptCccdVerificationService {
                 .front(front)
                 .back(back)
                 .build();
+    }
+
+    private FaceMatchResult matchFaces(MultipartFile idCardFrontImage, MultipartFile faceImage) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            headers.set(faceMatchApiKeyHeader, apiKey);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file[]", toImagePart(idCardFrontImage));
+            body.add("file[]", toImagePart(faceImage));
+
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                    faceMatchEndpoint,
+                    new HttpEntity<>(body, headers),
+                    Map.class
+            );
+
+            Map<String, Object> raw = response.getBody();
+            if (raw == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "FPT.AI FaceMatch không trả dữ liệu");
+            }
+
+            String code = Optional.ofNullable(raw.get("code")).map(Object::toString).orElse(null);
+            String message = Optional.ofNullable(raw.get("message")).map(Object::toString).orElse("");
+            Map<String, Object> data = responseData(raw);
+
+            return FaceMatchResult.builder()
+                    .success("200".equals(code))
+                    .match(toBoolean(data.get("isMatch")))
+                    .similarity(toBigDecimal(data.get("similarity")))
+                    .bothImagesAreIdCards(toBooleanObject(data.get("isBothImgIDCard")))
+                    .code(code)
+                    .message(message)
+                    .rawResponse(raw)
+                    .build();
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Không đọc được file ảnh: " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Không gọi được FPT.AI FaceMatch: " + e.getMessage(), e);
+        }
     }
 
     private FptCccdOcrResult recognize(MultipartFile image) {
@@ -156,6 +228,15 @@ public class FptCccdVerificationService {
         return Map.of();
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> responseData(Map<String, Object> raw) {
+        Object data = raw.get("data");
+        if (data instanceof Map<?, ?> dataMap) {
+            return (Map<String, Object>) dataMap;
+        }
+        return Map.of();
+    }
+
     private Integer toInteger(Object value) {
         if (value instanceof Number number) {
             return number.intValue();
@@ -168,6 +249,31 @@ public class FptCccdVerificationService {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private BigDecimal toBigDecimal(Object value) {
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private boolean toBoolean(Object value) {
+        return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
+    }
+
+    private Boolean toBooleanObject(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return toBoolean(value);
     }
 
     private String firstNonBlank(Map<String, Object> source, String... keys) {
@@ -213,5 +319,21 @@ public class FptCccdVerificationService {
             return "Ảnh backImage không phải mặt sau CCCD/CMND";
         }
         return "Xác thực OCR CCCD thành công";
+    }
+
+    private String buildFullVerificationMessage(CccdVerificationResponse cccd, FaceMatchResult faceMatch) {
+        if (!cccd.isVerified()) {
+            return cccd.getMessage();
+        }
+        if (faceMatch == null) {
+            return "Chưa thực hiện xác minh khuôn mặt";
+        }
+        if (!faceMatch.isSuccess()) {
+            return "FPT.AI FaceMatch không xác minh được khuôn mặt: " + faceMatch.getMessage();
+        }
+        if (!faceMatch.isMatch()) {
+            return "Khuôn mặt selfie không khớp với ảnh trên CCCD";
+        }
+        return "Xác thực CCCD và khuôn mặt thành công";
     }
 }
