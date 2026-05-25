@@ -52,7 +52,7 @@ public class SecurityConfig {
         // Cho phép các domain này gọi API
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:3000",
-                "https://frontend-iota-blush-19.vercel.app"
+                "https://5bros.vercel.app/"
         ));
 
         // Cho phép các method
