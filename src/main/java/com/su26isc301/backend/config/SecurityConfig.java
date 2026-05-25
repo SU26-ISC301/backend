@@ -4,12 +4,18 @@ import com.su26isc301.backend.filter.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer; // 1. BẮT BUỘC THÊM DÒNG IMPORT NÀY
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+// CÁC DÒNG IMPORT MỚI CHO CORS
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
@@ -21,7 +27,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(Customizer.withDefaults()) // 2. THÊM DÒNG NÀY VÀO ĐẦU TIÊN ĐỂ MỞ CỬA CORS
+                .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -36,5 +42,31 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    // THÊM TOÀN BỘ CỤC NÀY VÀO ĐỂ TRỊ DỨT ĐIỂM LỖI CORS CỦA SPRING SECURITY
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        // Cho phép các domain này gọi API
+        configuration.setAllowedOrigins(Arrays.asList(
+                "http://localhost:3000",
+                "https://frontend-iota-blush-19.vercel.app"
+        ));
+
+        // Cho phép các method
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+
+        // Cho phép tất cả các header
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+
+        // Cho phép gửi cookie/token
+        configuration.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        // Áp dụng cấu hình trên cho tất cả các đường dẫn API
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 }
