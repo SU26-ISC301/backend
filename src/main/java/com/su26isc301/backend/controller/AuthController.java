@@ -49,10 +49,20 @@ public class AuthController {
 @Operation(summary = "Bước 1: Yêu cầu đăng ký (Hệ thống sẽ gửi OTP vào email)")
 public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
     try {
-        if (profileRepository.findByEmail(request.getEmail()).isPresent()) {
+        String email = normalizeEmail(request.getEmail());
+        String phone = normalizePhone(request.getPhone());
+        if (email == null || request.getPassword() == null || request.getPassword().isBlank()
+                || request.getFullName() == null || request.getFullName().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Email, mật khẩu và họ tên là bắt buộc"));
+        }
+
+        request.setEmail(email);
+        request.setPhone(phone);
+
+        if (profileRepository.findByEmail(email).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Email đã được sử dụng"));
         }
-        if (profileRepository.findByPhone(request.getPhone()).isPresent()) {
+        if (phone != null && profileRepository.findByPhone(phone).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Số điện thoại đã được sử dụng"));
         }
         otpService.generateAndSendOtp(request);
@@ -66,10 +76,10 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
     @Operation(summary = "Bước 2: Xác nhận OTP và hoàn tất lưu tài khoản")
     public ResponseEntity<?> verifyRegister(@RequestBody VerifyOtpRequest requestData) {
         try {
-            String email = requestData.getEmail();
-            String otp = requestData.getOtp();
+            String email = normalizeEmail(requestData.getEmail());
+            String otp = requestData.getOtp() == null ? null : requestData.getOtp().trim();
 
-            if (email == null || otp == null) {
+            if (email == null || otp == null || otp.isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Email và OTP là bắt buộc"));
             }
 
@@ -82,6 +92,9 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
             // 2. Double check DB (đề phòng ai đó đã đăng ký email này trong lúc user chờ nhập OTP)
             if (profileRepository.findByEmail(pendingUser.getEmail()).isPresent()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Email đã được sử dụng"));
+            }
+            if (pendingUser.getPhone() != null && profileRepository.findByPhone(pendingUser.getPhone()).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Số điện thoại đã được sử dụng"));
             }
 
             // 3. Gọi API của Supabase để tạo User (Giờ mới thực sự tạo user)
@@ -125,16 +138,51 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
                     .isActive(true)
                     .build();
             profileRepository.save(newProfile);
+            otpService.removeOtp(email);
 
             return ResponseEntity.ok(Map.of(
                     "message", "Đăng ký và xác thực thành công. Bạn có thể đăng nhập ngay.",
                     "userId", supabaseUserId
             ));
         } catch (HttpClientErrorException e) {
-            return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAs(Map.class));
+            return handleSupabaseRegisterError(e);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        return email.trim().toLowerCase();
+    }
+
+    private String normalizePhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return null;
+        }
+        return phone.trim();
+    }
+
+    private ResponseEntity<?> handleSupabaseRegisterError(HttpClientErrorException e) {
+        Map<String, Object> errorBody = e.getResponseBodyAs(Map.class);
+        Object code = errorBody == null ? null : errorBody.get("code");
+        Object message = errorBody == null ? null : errorBody.get("msg");
+        if (message == null && errorBody != null) {
+            message = errorBody.get("message");
+        }
+
+        if ("user_already_exists".equals(code) || "user_already_exist".equals(code)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", "Email đã tồn tại trong Supabase Auth nhưng chưa chắc đã có trong bảng profiles. Hãy xóa user cũ trong Supabase Auth hoặc đồng bộ lại profile.",
+                    "code", code
+            ));
+        }
+
+        return ResponseEntity.status(e.getStatusCode()).body(
+                errorBody != null ? errorBody : Map.of("error", message != null ? message : e.getMessage())
+        );
     }
 
     @PostMapping("/login")

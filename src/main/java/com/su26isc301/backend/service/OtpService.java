@@ -33,7 +33,7 @@ public class OtpService {
 
     @Async
     public void generateAndSendOtp(RegisterRequest request) {
-        String email = request.getEmail();
+        String email = request.getEmail().trim().toLowerCase();
         String otp = String.format("%06d", random.nextInt(1_000_000));
         LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(otpExpireSeconds);
 
@@ -70,18 +70,21 @@ public class OtpService {
     }
 
     public RegisterRequest verifyAndGetPayload(String email, String otp) {
-        OtpData otpData = otpStore.get(email);
+        String normalizedEmail = email.trim().toLowerCase();
+        OtpData otpData = otpStore.get(normalizedEmail);
         if (otpData == null || LocalDateTime.now().isAfter(otpData.expiresAt())) {
-            otpStore.remove(email);
+            otpStore.remove(normalizedEmail);
             return null;
         }
 
         if (otpData.code().equals(otp)) {
-            RegisterRequest payload = otpData.payload();
-            otpStore.remove(email);
-            return payload;
+            return otpData.payload();
         }
         return null;
+    }
+
+    public void removeOtp(String email) {
+        otpStore.remove(email.trim().toLowerCase());
     }
 
     private record OtpData(String code, LocalDateTime expiresAt, RegisterRequest payload) {}
