@@ -19,7 +19,6 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
@@ -37,7 +36,7 @@ public class AuthController {
     private final ProfileRepository profileRepository;
 
     private final OtpService otpService;
-    private final JavaMailSender mailSender;
+
 
     @Value("${supabase.url}")
     private String supabaseUrl;
