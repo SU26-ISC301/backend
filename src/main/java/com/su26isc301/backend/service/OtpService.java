@@ -73,7 +73,7 @@ public class OtpService {
         @Value("${app.otp.expire-seconds:60}")
         private long otpExpireSeconds;
 
-        @Value("${spring.mail.username}")
+        @Value("${app.mail.sender}")
         private String fromEmail;
 
         @Async
@@ -90,6 +90,7 @@ public class OtpService {
             mail.setTo(email);
             mail.setSubject("Mã OTP xác thực tài khoản");
             mail.setText("Mã OTP của bạn là: " + otp + "\nMã có hiệu lực trong " + otpExpireSeconds + " giây.");
+            System.out.println("OTP = " + otp);
             mailSender.send(mail);
         }
 
