@@ -2,6 +2,7 @@ package com.su26isc301.backend.controller;
 
 import com.su26isc301.backend.dto.request.RegisterRequest;
 import com.su26isc301.backend.dto.request.LoginRequest;
+import com.su26isc301.backend.dto.request.VerifyOtpRequest;
 import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.AuthResponse;
 import com.su26isc301.backend.dto.request.RefreshTokenRequest;
@@ -64,10 +65,10 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
 
     @PostMapping("/register-verify")
     @Operation(summary = "Bước 2: Xác nhận OTP và hoàn tất lưu tài khoản")
-    public ResponseEntity<?> verifyRegister(@RequestBody Map<String, String> requestData) {
+    public ResponseEntity<?> verifyRegister(@RequestBody VerifyOtpRequest requestData) {
         try {
-            String email = requestData.get("email");
-            String otp = requestData.get("otp");
+            String email = requestData.getEmail();
+            String otp = requestData.getOtp();
 
             if (email == null || otp == null) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Email và OTP là bắt buộc"));
@@ -136,6 +137,7 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }
+
     @PostMapping("/login")
     @Operation(summary = "Đăng nhập bằng Email hoặc Số điện thoại")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
