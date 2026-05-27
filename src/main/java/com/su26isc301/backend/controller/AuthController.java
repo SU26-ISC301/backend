@@ -1,8 +1,10 @@
 package com.su26isc301.backend.controller;
 
+import com.su26isc301.backend.dto.request.ForgotPasswordRequest;
 import com.su26isc301.backend.dto.request.RegisterRequest;
 import com.su26isc301.backend.dto.request.LoginRequest;
 import com.su26isc301.backend.dto.request.ProfileUpdateRequest;
+import com.su26isc301.backend.dto.request.ResetPasswordRequest;
 import com.su26isc301.backend.dto.request.VerifyOtpRequest;
 import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.AuthResponse;
@@ -44,6 +46,9 @@ public class AuthController {
 
     @Value("${supabase.anon.key}")
     private String supabaseAnonKey;
+
+    @Value("${supabase.service-role.key:}")
+    private String supabaseServiceRoleKey;
 
 
 @PostMapping("/register")
@@ -184,6 +189,104 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
         return ResponseEntity.status(e.getStatusCode()).body(
                 errorBody != null ? errorBody : Map.of("error", message != null ? message : e.getMessage())
         );
+    }
+
+    @PostMapping("/password/forgot")
+    @Operation(summary = "Bước 1: Gửi OTP quên mật khẩu đến email")
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        try {
+            String email = normalizeEmail(request.getEmail());
+            if (email == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Email là bắt buộc"));
+            }
+
+            profileRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản với email này"));
+
+            otpService.generateAndSendOtp(email);
+            return ResponseEntity.ok(ApiResponse.success("Vui lòng kiểm tra email để lấy mã OTP đặt lại mật khẩu.", Map.of("email", email)));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(ApiResponse.error("Lỗi khi gửi OTP: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/password/verify-otp")
+    @Operation(summary = "Bước 2: Xác thực OTP quên mật khẩu")
+    public ResponseEntity<?> verifyForgotPasswordOtp(@RequestBody VerifyOtpRequest request) {
+        try {
+            String email = normalizeEmail(request.getEmail());
+            String otp = request.getOtp() == null ? null : request.getOtp().trim();
+            if (email == null || otp == null || otp.isBlank()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Email và OTP là bắt buộc"));
+            }
+
+            profileRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản với email này"));
+
+            if (!otpService.verifyOtp(email, otp)) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("OTP không hợp lệ hoặc đã hết hạn"));
+            }
+
+            otpService.markEmailVerified(email);
+            return ResponseEntity.ok(ApiResponse.success("Xác thực OTP thành công", Map.of("email", email)));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/password/reset")
+    @Operation(summary = "Bước 3: Đặt lại mật khẩu sau khi OTP đã xác thực")
+    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
+        try {
+            String email = normalizeEmail(request.getEmail());
+            if (email == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Email là bắt buộc"));
+            }
+            if (!otpService.isEmailVerified(email)) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Vui lòng xác thực OTP trước khi đặt lại mật khẩu"));
+            }
+            if (request.getPassword() == null || request.getPassword().isBlank()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Mật khẩu mới là bắt buộc"));
+            }
+            if (request.getPassword().length() < 6) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Mật khẩu mới tối thiểu 6 ký tự"));
+            }
+            if (!request.getPassword().equals(request.getConfirmPassword())) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Mật khẩu xác nhận không khớp"));
+            }
+
+            Profile profile = profileRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản với email này"));
+
+            updateSupabasePassword(profile.getId(), request.getPassword());
+            otpService.removeOtp(email);
+
+            return ResponseEntity.ok(ApiResponse.success("Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại."));
+        } catch (HttpClientErrorException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(ApiResponse.error("Không thể cập nhật mật khẩu trên Supabase"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    private void updateSupabasePassword(UUID userId, String newPassword) {
+        if (supabaseServiceRoleKey == null || supabaseServiceRoleKey.isBlank()) {
+            throw new RuntimeException("Backend chưa cấu hình SUPABASE_SERVICE_ROLE_KEY để đặt lại mật khẩu");
+        }
+
+        RestTemplate restTemplate = new RestTemplate();
+        String url = supabaseUrl + "/auth/v1/admin/users/" + userId;
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("apikey", supabaseServiceRoleKey);
+        headers.setBearerAuth(supabaseServiceRoleKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(Map.of("password", newPassword), headers);
+        restTemplate.exchange(url, HttpMethod.PUT, entity, Map.class);
     }
 
     @PostMapping("/login")
