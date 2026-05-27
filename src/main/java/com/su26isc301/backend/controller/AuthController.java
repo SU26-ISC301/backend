@@ -418,7 +418,7 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
             avatar.transferTo(destination);
 
             String avatarUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
-                    .path("/uploads/avatars/")
+                    .path("/api/auth/uploads/avatars/")
                     .path(fileName)
                     .toUriString();
             profile.setAvatarUrl(avatarUrl);
