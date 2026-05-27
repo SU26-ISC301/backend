@@ -38,6 +38,7 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/vendors/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/vendors/register/start").permitAll()
                         .requestMatchers(HttpMethod.POST, "/vendors/register/verify-otp").permitAll()
                         .requestMatchers(HttpMethod.POST, "/vendors/register/complete").permitAll()

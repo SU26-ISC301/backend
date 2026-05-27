@@ -2,6 +2,7 @@ package com.su26isc301.backend.controller;
 
 import com.su26isc301.backend.dto.request.VendorCompleteFormRequest;
 import com.su26isc301.backend.dto.request.VendorEmailOtpRequest;
+import com.su26isc301.backend.dto.request.LoginRequest;
 import com.su26isc301.backend.dto.request.VendorOtpVerifyRequest;
 import com.su26isc301.backend.dto.request.VendorOnboardingRequest;
 import com.su26isc301.backend.dto.request.VendorRegisterRequest;
@@ -31,6 +32,18 @@ public class VendorController {
 
     private final VendorService vendorService;
     private final OtpService otpService;
+
+    @PostMapping("/login")
+    public ResponseEntity<ApiResponse<?>> loginVendor(@RequestBody LoginRequest request) {
+        try {
+            return ResponseEntity.ok(ApiResponse.success(
+                    "Đăng nhập Vendor thành công",
+                    vendorService.loginVendor(request)
+            ));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
 
     @PostMapping("/register/start")
     public ResponseEntity<ApiResponse<Map<String, String>>> startVendorRegister(

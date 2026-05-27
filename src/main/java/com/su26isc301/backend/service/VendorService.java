@@ -1,8 +1,10 @@
 package com.su26isc301.backend.service;
 
 import com.su26isc301.backend.dto.request.VendorRegisterRequest;
+import com.su26isc301.backend.dto.request.LoginRequest;
 import com.su26isc301.backend.dto.request.VendorOnboardingRequest;
 import com.su26isc301.backend.dto.request.VendorUpdateRequest;
+import com.su26isc301.backend.dto.response.VendorLoginResponse;
 import com.su26isc301.backend.entity.Profile;
 import com.su26isc301.backend.entity.Vendor;
 import com.su26isc301.backend.enums.Roles;
@@ -152,6 +154,26 @@ public class VendorService {
         return vendorRepository.findByProfile(profile).isPresent();
     }
 
+    public VendorLoginResponse loginVendor(LoginRequest request) {
+        String loginEmail = resolveLoginEmail(request.getIdentifier());
+        Profile profile = profileRepository.findByEmail(loginEmail)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản Vendor"));
+
+        Vendor vendor = vendorRepository.findByProfile(profile)
+                .orElseThrow(() -> new RuntimeException("Tài khoản này chưa đăng ký gian hàng Vendor"));
+
+        Map responseBody = loginSupabase(loginEmail, request.getPassword());
+        return new VendorLoginResponse(
+                (String) responseBody.get("access_token"),
+                (String) responseBody.get("refresh_token"),
+                Long.valueOf(responseBody.get("expires_in").toString()),
+                vendor.getId(),
+                profile.getId(),
+                vendor.getShopName(),
+                vendor.getStatus()
+        );
+    }
+
     private Profile createProfileForNewVendor(
             VendorOnboardingRequest request,
             String email,
@@ -185,7 +207,6 @@ public class VendorService {
 
     private UUID createSupabaseUser(String email, String password) {
         try {
-            RestTemplate restTemplate = new RestTemplate();
             String url = supabaseUrl + "/auth/v1/signup";
             HttpHeaders headers = new HttpHeaders();
             headers.set("apikey", supabaseAnonKey);
@@ -193,7 +214,7 @@ public class VendorService {
 
             Map<String, String> body = Map.of("email", email, "password", password);
             HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
-            Map responseBody = restTemplate.postForEntity(url, entity, Map.class).getBody();
+            Map responseBody = new RestTemplate().postForEntity(url, entity, Map.class).getBody();
 
             String supabaseUserId = extractSupabaseUserId(responseBody);
             if (supabaseUserId == null) {
@@ -203,6 +224,36 @@ public class VendorService {
         } catch (HttpClientErrorException e) {
             throw new RuntimeException("Không tạo được tài khoản Supabase: " + e.getResponseBodyAsString(), e);
         }
+    }
+
+    private Map loginSupabase(String email, String password) {
+        try {
+            String url = supabaseUrl + "/auth/v1/token?grant_type=password";
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("apikey", supabaseAnonKey);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, String> body = Map.of("email", email, "password", password);
+            HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
+            return new RestTemplate().postForEntity(url, entity, Map.class).getBody();
+        } catch (HttpClientErrorException e) {
+            throw new RuntimeException("Tài khoản hoặc mật khẩu không đúng", e);
+        }
+    }
+
+    private String resolveLoginEmail(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new RuntimeException("Email hoặc số điện thoại là bắt buộc");
+        }
+
+        String normalized = identifier.trim();
+        if (normalized.contains("@")) {
+            return normalizeEmail(normalized);
+        }
+
+        return profileRepository.findByPhone(normalizePhone(normalized))
+                .map(Profile::getEmail)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản với số điện thoại này"));
     }
 
     @SuppressWarnings("unchecked")
