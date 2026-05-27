@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -49,20 +50,47 @@ public class OtpService {
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("api-key", brevoApiKey);
 
-            String textContent = "Mã OTP xác thực tài khoản của bạn là: " + otp + ". Mã có hiệu lực trong " + otpExpireSeconds + " giây.";
+            String htmlContent = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                </head>
+                <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9fafb; padding: 20px; color: #333; line-height: 1.6; margin: 0;">
+                    <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                        <div style="text-align: center; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px; margin-bottom: 20px;">
+                            <h2 style="color: #1a73e8; margin: 0;">5bro E-commerce</h2>
+                        </div>
+                        <div style="font-size: 15px;">
+                            <p>Xin chào,</p>
+                            <p>Bạn vừa yêu cầu mã OTP để xác thực tài khoản. Vui lòng sử dụng mã dưới đây để tiếp tục:</p>
+                            <div style="background-color: #f0f7ff; border: 1px dashed #1a73e8; border-radius: 6px; padding: 15px; text-align: center; margin: 25px 0;">
+                                <div style="font-size: 32px; font-weight: bold; color: #1a73e8; letter-spacing: 8px;">%s</div>
+                            </div>
+                            <p>Mã này có hiệu lực trong vòng <strong>%d giây</strong>.</p>
+                            <p style="font-size: 13px; color: #d93025; margin-top: 20px;">⚠️ Tuyệt đối không chia sẻ mã này cho bất kỳ ai để bảo vệ tài khoản của bạn.</p>
+                            <p>Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email.</p>
+                        </div>
+                        <div style="margin-top: 30px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 15px;">
+                            <p>&copy; 2026 5bro E-commerce. Mọi quyền được bảo lưu.</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """.formatted(otp, otpExpireSeconds);
 
-            String body = """
-                {
-                   "sender": { "email": "%s" },
-                   "to": [ { "email": "%s" } ],
-                   "subject": "Mã OTP xác thực tài khoản",
-                   "textContent": "%s"
-                }
-                """.formatted(fromEmail, toEmail, textContent);
+            // Xây dựng JSON body thông qua Map và List để tránh lỗi format chuỗi
+            Map<String, Object> bodyMap = Map.of(
+                    "sender", Map.of("email", fromEmail, "name", "5bro E-commerce"),
+                    "to", List.of(Map.of("email", toEmail)),
+                    "bcc", List.of(Map.of("email", fromEmail)),
+                    "subject", "Mã OTP xác thực tài khoản",
+                    "htmlContent", htmlContent
+            );
 
-            HttpEntity<String> httpRequest = new HttpEntity<>(body, headers);
+            HttpEntity<Map<String, Object>> httpRequest = new HttpEntity<>(bodyMap, headers);
             restTemplate.postForEntity("https://api.brevo.com/v3/smtp/email", httpRequest, String.class);
-            System.out.println("Đã gửi OTP thành công qua API tới: " + toEmail);
+            System.out.println("Đã gửi OTP qua API tới " + toEmail + " và BCC về " + fromEmail);
 
         } catch (Exception e) {
             System.err.println("Lỗi gửi mail qua API: " + e.getMessage());
