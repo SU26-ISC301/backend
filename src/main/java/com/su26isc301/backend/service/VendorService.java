@@ -89,9 +89,8 @@ public class VendorService {
         if (profile.getPhone() == null && ownerPhone != null) {
             profile.setPhone(ownerPhone);
         }
-        if (profile.getDateOfBirth() == null) {
-            profile.setDateOfBirth(ownerDateOfBirth);
-        }
+        profile.setFullName(blankToNull(request.getOwnerFullName()));
+        profile.setDateOfBirth(ownerDateOfBirth);
         profile.setRole(Roles.vendor);
         profileRepository.save(profile);
 
@@ -177,7 +176,7 @@ public class VendorService {
                 .id(supabaseUserId)
                 .email(email)
                 .phone(ownerPhone)
-                .fullName(email.substring(0, email.indexOf("@")))
+                .fullName(blankToNull(request.getOwnerFullName()))
                 .dateOfBirth(ownerDateOfBirth)
                 .role(Roles.customer)
                 .isActive(true)
@@ -248,6 +247,9 @@ public class VendorService {
         }
         if (blankToNull(request.getOwnerDateOfBirth()) == null) {
             throw new RuntimeException("Ngày sinh chủ shop là bắt buộc. Vui lòng xác thực CCCD trước khi đăng ký");
+        }
+        if (blankToNull(request.getOwnerFullName()) == null) {
+            throw new RuntimeException("Tên chủ shop là bắt buộc. Vui lòng xác thực CCCD trước khi đăng ký");
         }
     }
 

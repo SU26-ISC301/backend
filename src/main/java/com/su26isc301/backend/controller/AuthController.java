@@ -2,6 +2,7 @@ package com.su26isc301.backend.controller;
 
 import com.su26isc301.backend.dto.request.RegisterRequest;
 import com.su26isc301.backend.dto.request.LoginRequest;
+import com.su26isc301.backend.dto.request.ProfileUpdateRequest;
 import com.su26isc301.backend.dto.request.VerifyOtpRequest;
 import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.AuthResponse;
@@ -250,6 +251,33 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
             return ResponseEntity.ok(ApiResponse.success("Lấy thông tin thành công", profile));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error("Phiên đăng nhập không hợp lệ hoặc đã hết hạn"));
+        }
+    }
+
+    @PutMapping("/profiles/{profileId}")
+    @Operation(summary = "Cập nhật tên và ngày sinh của profile")
+    public ResponseEntity<?> updateProfileInfo(
+            @PathVariable UUID profileId,
+            @RequestBody ProfileUpdateRequest request
+    ) {
+        try {
+            Profile profile = profileRepository.findById(profileId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy hồ sơ người dùng"));
+
+            if (request.getFullName() == null || request.getFullName().isBlank()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Tên người dùng là bắt buộc"));
+            }
+            if (request.getDateOfBirth() == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Ngày sinh là bắt buộc"));
+            }
+
+            profile.setFullName(request.getFullName().trim());
+            profile.setDateOfBirth(request.getDateOfBirth());
+            Profile updatedProfile = profileRepository.save(profile);
+
+            return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin thành công", updatedProfile));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
         }
     }
 

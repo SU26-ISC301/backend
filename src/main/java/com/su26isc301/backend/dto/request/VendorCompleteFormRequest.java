@@ -15,5 +15,6 @@ public class VendorCompleteFormRequest {
     private String shopPhone;
     private String cccd;
     private String taxCode;
+    private String ownerFullName;
     private String ownerDateOfBirth;
 }

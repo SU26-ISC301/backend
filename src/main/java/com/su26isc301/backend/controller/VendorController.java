@@ -192,6 +192,7 @@ public class VendorController {
         request.setShopPhone(form.getShopPhone());
         request.setCccd(form.getCccd());
         request.setTaxCode(form.getTaxCode());
+        request.setOwnerFullName(form.getOwnerFullName());
         request.setOwnerDateOfBirth(form.getOwnerDateOfBirth());
         return request;
     }
