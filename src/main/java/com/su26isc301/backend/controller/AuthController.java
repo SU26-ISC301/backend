@@ -1,5 +1,6 @@
 package com.su26isc301.backend.controller;
 
+import com.su26isc301.backend.dto.request.BuyerProfileUpdateRequest;
 import com.su26isc301.backend.dto.request.ForgotPasswordRequest;
 import com.su26isc301.backend.dto.request.RegisterRequest;
 import com.su26isc301.backend.dto.request.LoginRequest;
@@ -23,10 +24,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import org.springframework.http.*;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -39,6 +47,7 @@ public class AuthController {
     private final ProfileRepository profileRepository;
 
     private final OtpService otpService;
+    private static final long MAX_AVATAR_SIZE_BYTES = 5L * 1024 * 1024;
 
 
     @Value("${supabase.url}")
@@ -287,6 +296,197 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
 
         HttpEntity<Map<String, String>> entity = new HttpEntity<>(Map.of("password", newPassword), headers);
         restTemplate.exchange(url, HttpMethod.PUT, entity, Map.class);
+    }
+
+    @PostMapping("/profile/update-otp")
+    @Operation(summary = "Gửi OTP xác nhận đổi email hoặc số điện thoại Buyer")
+    public ResponseEntity<?> requestProfileUpdateOtp(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody BuyerProfileUpdateRequest request
+    ) {
+        try {
+            Profile profile = getProfileFromAuthHeader(authHeader);
+            String nextEmail = normalizeEmail(request.getEmail());
+            String nextPhone = normalizePhone(request.getPhone());
+
+            if (nextEmail != null && !nextEmail.equals(profile.getEmail())
+                    && profileRepository.findByEmail(nextEmail).isPresent()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Email đã được sử dụng"));
+            }
+            if (nextPhone != null && !Objects.equals(nextPhone, profile.getPhone())
+                    && profileRepository.findByPhone(nextPhone).isPresent()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Số điện thoại đã được sử dụng"));
+            }
+
+            boolean emailChanged = nextEmail != null && !nextEmail.equals(profile.getEmail());
+            boolean phoneChanged = nextPhone != null && !Objects.equals(nextPhone, profile.getPhone());
+            if (!emailChanged && !phoneChanged) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Không có email hoặc số điện thoại mới cần xác thực"));
+            }
+
+            String otpTarget = emailChanged ? nextEmail : profile.getEmail();
+            otpService.generateAndSendOtp(otpTarget);
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    emailChanged
+                            ? "OTP đã được gửi đến email mới của bạn."
+                            : "OTP đã được gửi đến email hiện tại để xác thực đổi số điện thoại.",
+                    Map.of("otpTarget", otpTarget)
+            ));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/profile")
+    @Operation(summary = "Cập nhật thông tin cá nhân Buyer")
+    public ResponseEntity<?> updateCurrentBuyerProfile(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestBody BuyerProfileUpdateRequest request
+    ) {
+        try {
+            Profile profile = getProfileFromAuthHeader(authHeader);
+            String nextEmail = normalizeEmail(request.getEmail());
+            String nextPhone = normalizePhone(request.getPhone());
+
+            if (request.getFullName() == null || request.getFullName().isBlank()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Tên người dùng là bắt buộc"));
+            }
+            if (nextEmail == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Email là bắt buộc"));
+            }
+            if (nextPhone == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Số điện thoại là bắt buộc"));
+            }
+            if (request.getDateOfBirth() == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Ngày sinh là bắt buộc"));
+            }
+
+            boolean emailChanged = !nextEmail.equals(profile.getEmail());
+            boolean phoneChanged = !Objects.equals(nextPhone, profile.getPhone());
+            if (emailChanged && profileRepository.findByEmail(nextEmail).isPresent()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Email đã được sử dụng"));
+            }
+            if (phoneChanged && profileRepository.findByPhone(nextPhone).isPresent()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Số điện thoại đã được sử dụng"));
+            }
+
+            if (emailChanged || phoneChanged) {
+                String otpTarget = emailChanged ? nextEmail : profile.getEmail();
+                String otp = request.getOtp() == null ? null : request.getOtp().trim();
+                if (otp == null || otp.isBlank()) {
+                    return ResponseEntity.badRequest().body(ApiResponse.error("Vui lòng nhập OTP xác thực thay đổi"));
+                }
+                if (!otpService.verifyOtp(otpTarget, otp)) {
+                    return ResponseEntity.badRequest().body(ApiResponse.error("OTP không hợp lệ hoặc đã hết hạn"));
+                }
+                otpService.removeOtp(otpTarget);
+            }
+
+            if (emailChanged) {
+                updateSupabaseUserEmail(profile.getId(), nextEmail);
+            }
+
+            profile.setFullName(request.getFullName().trim());
+            profile.setEmail(nextEmail);
+            profile.setPhone(nextPhone);
+            profile.setDateOfBirth(request.getDateOfBirth());
+
+            return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin thành công", profileRepository.save(profile)));
+        } catch (HttpClientErrorException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(ApiResponse.error("Không thể cập nhật email trên Supabase"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PostMapping(value = "/profile/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload avatar Buyer")
+    public ResponseEntity<?> uploadCurrentBuyerAvatar(
+            @RequestHeader("Authorization") String authHeader,
+            @RequestPart("avatar") MultipartFile avatar
+    ) {
+        try {
+            Profile profile = getProfileFromAuthHeader(authHeader);
+            validateAvatar(avatar);
+
+            String extension = getExtension(avatar.getOriginalFilename(), avatar.getContentType());
+            String fileName = profile.getId() + "-" + System.currentTimeMillis() + extension;
+            Path avatarDir = Path.of("uploads", "avatars").toAbsolutePath().normalize();
+            Files.createDirectories(avatarDir);
+            Path destination = avatarDir.resolve(fileName).normalize();
+            avatar.transferTo(destination);
+
+            String avatarUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("/uploads/avatars/")
+                    .path(fileName)
+                    .toUriString();
+            profile.setAvatarUrl(avatarUrl);
+
+            return ResponseEntity.ok(ApiResponse.success("Cập nhật ảnh đại diện thành công", profileRepository.save(profile)));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().body(ApiResponse.error("Không thể lưu ảnh đại diện"));
+        }
+    }
+
+    private Profile getProfileFromAuthHeader(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new RuntimeException("Vui lòng đăng nhập để tiếp tục");
+        }
+        String token = authHeader.substring(7);
+        String userId = jwtService.extractUserId(token);
+        return profileRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy hồ sơ người dùng"));
+    }
+
+    private void updateSupabaseUserEmail(UUID userId, String newEmail) {
+        if (supabaseServiceRoleKey == null || supabaseServiceRoleKey.isBlank()) {
+            throw new RuntimeException("Backend chưa cấu hình SUPABASE_SERVICE_ROLE_KEY để cập nhật email");
+        }
+
+        RestTemplate restTemplate = new RestTemplate();
+        String url = supabaseUrl + "/auth/v1/admin/users/" + userId;
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("apikey", supabaseServiceRoleKey);
+        headers.setBearerAuth(supabaseServiceRoleKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(
+                Map.of("email", newEmail, "email_confirm", true),
+                headers
+        );
+        restTemplate.exchange(url, HttpMethod.PUT, entity, Map.class);
+    }
+
+    private void validateAvatar(MultipartFile avatar) {
+        if (avatar == null || avatar.isEmpty()) {
+            throw new RuntimeException("Vui lòng chọn ảnh đại diện");
+        }
+        if (avatar.getSize() > MAX_AVATAR_SIZE_BYTES) {
+            throw new RuntimeException("Ảnh đại diện phải dưới 5MB");
+        }
+        String contentType = avatar.getContentType();
+        if (contentType == null || !(
+                contentType.equals("image/jpeg")
+                        || contentType.equals("image/png")
+                        || contentType.equals("image/webp")
+        )) {
+            throw new RuntimeException("Ảnh đại diện chỉ hỗ trợ JPG, PNG hoặc WEBP");
+        }
+    }
+
+    private String getExtension(String originalFilename, String contentType) {
+        if (originalFilename != null && originalFilename.contains(".")) {
+            String ext = originalFilename.substring(originalFilename.lastIndexOf(".")).toLowerCase(Locale.ROOT);
+            if (ext.equals(".jpg") || ext.equals(".jpeg") || ext.equals(".png") || ext.equals(".webp")) {
+                return ext;
+            }
+        }
+        if ("image/png".equals(contentType)) return ".png";
+        if ("image/webp".equals(contentType)) return ".webp";
+        return ".jpg";
     }
 
     @PostMapping("/login")

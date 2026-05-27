@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.access.AccessDeniedHandler;
@@ -25,6 +26,11 @@ import java.util.Arrays;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return web -> web.ignoring().requestMatchers("/uploads/**");
+    }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -46,6 +52,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/identity/cccd/verify-with-face").permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
+                                "/uploads/**",
                                 "/vendors/register/**",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
