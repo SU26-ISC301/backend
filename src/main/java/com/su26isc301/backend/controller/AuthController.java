@@ -77,10 +77,10 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
     @Operation(summary = "Bước 2: Xác nhận OTP và hoàn tất lưu tài khoản")
     public ResponseEntity<?> verifyRegister(@RequestBody VerifyOtpRequest requestData) {
         try {
-            String email = normalizeEmail(requestData.getEmail());
-            String otp = requestData.getOtp() == null ? null : requestData.getOtp().trim();
+            String email = requestData.getEmail();
+            String otp = requestData.getOtp();
 
-            if (email == null || otp == null || otp.isBlank()) {
+            if (email == null || otp == null) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Email và OTP là bắt buộc"));
             }
 
