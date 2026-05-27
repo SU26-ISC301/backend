@@ -20,10 +20,14 @@ import java.util.concurrent.ConcurrentHashMap;
 public class OtpService {
 
     private final Map<String, OtpData> otpStore = new ConcurrentHashMap<>();
+    private final Map<String, LocalDateTime> verifiedEmailStore = new ConcurrentHashMap<>();
     private final java.security.SecureRandom random = new java.security.SecureRandom();
 
     @Value("${app.otp.expire-seconds:60}")
     private long otpExpireSeconds;
+
+    @Value("${app.vendor.email-verified-seconds:600}")
+    private long verifiedEmailExpireSeconds;
 
     @Value("${app.mail.sender}")
     private String fromEmail;
@@ -40,6 +44,17 @@ public class OtpService {
         otpStore.put(email, new OtpData(otp, expiresAt, request));
 
         sendEmailViaApi(email, otp);
+    }
+
+    @Async
+    public void generateAndSendOtp(String email) {
+        String normalizedEmail = email.trim().toLowerCase();
+        String otp = String.format("%06d", random.nextInt(1_000_000));
+        LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(otpExpireSeconds);
+
+        otpStore.put(normalizedEmail, new OtpData(otp, expiresAt, null));
+
+        sendEmailViaApi(normalizedEmail, otp);
     }
 
     private void sendEmailViaApi(String toEmail, String otp) {
@@ -70,10 +85,8 @@ public class OtpService {
     }
 
     public RegisterRequest verifyAndGetPayload(String email, String otp) {
-        String normalizedEmail = email.trim().toLowerCase();
-        OtpData otpData = otpStore.get(normalizedEmail);
-        if (otpData == null || LocalDateTime.now().isAfter(otpData.expiresAt())) {
-            otpStore.remove(normalizedEmail);
+        OtpData otpData = findValidOtp(email);
+        if (otpData == null) {
             return null;
         }
 
@@ -83,8 +96,40 @@ public class OtpService {
         return null;
     }
 
+    public boolean verifyOtp(String email, String otp) {
+        OtpData otpData = findValidOtp(email);
+        return otpData != null && otpData.code().equals(otp);
+    }
+
+    public void markEmailVerified(String email) {
+        verifiedEmailStore.put(email.trim().toLowerCase(), LocalDateTime.now().plusSeconds(verifiedEmailExpireSeconds));
+    }
+
+    public boolean isEmailVerified(String email) {
+        String normalizedEmail = email.trim().toLowerCase();
+        LocalDateTime expiresAt = verifiedEmailStore.get(normalizedEmail);
+        if (expiresAt == null || LocalDateTime.now().isAfter(expiresAt)) {
+            verifiedEmailStore.remove(normalizedEmail);
+            return false;
+        }
+        return true;
+    }
+
+    private OtpData findValidOtp(String email) {
+        String normalizedEmail = email.trim().toLowerCase();
+        OtpData otpData = otpStore.get(normalizedEmail);
+        if (otpData == null || LocalDateTime.now().isAfter(otpData.expiresAt())) {
+            otpStore.remove(normalizedEmail);
+            return null;
+        }
+
+        return otpData;
+    }
+
     public void removeOtp(String email) {
-        otpStore.remove(email.trim().toLowerCase());
+        String normalizedEmail = email.trim().toLowerCase();
+        otpStore.remove(normalizedEmail);
+        verifiedEmailStore.remove(normalizedEmail);
     }
 
     private record OtpData(String code, LocalDateTime expiresAt, RegisterRequest payload) {}
@@ -93,5 +138,6 @@ public class OtpService {
     public void cleanupExpiredOtps() {
         LocalDateTime now = LocalDateTime.now();
         otpStore.entrySet().removeIf(entry -> now.isAfter(entry.getValue().expiresAt()));
+        verifiedEmailStore.entrySet().removeIf(entry -> now.isAfter(entry.getValue()));
     }
 }
