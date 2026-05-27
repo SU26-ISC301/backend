@@ -1,7 +1,6 @@
 package com.su26isc301.backend.dto.request;
 
 import lombok.Data;
-import org.springframework.web.multipart.MultipartFile;
 
 @Data
 public class VendorCompleteFormRequest {
@@ -14,9 +13,7 @@ public class VendorCompleteFormRequest {
     private String category;
     private String shopEmail;
     private String shopPhone;
+    private String cccd;
     private String taxCode;
-
-    private MultipartFile frontImage;
-    private MultipartFile backImage;
-    private MultipartFile faceImage;
+    private String ownerDateOfBirth;
 }

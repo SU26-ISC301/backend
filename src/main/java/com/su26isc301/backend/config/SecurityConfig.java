@@ -41,6 +41,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/vendors/register/start").permitAll()
                         .requestMatchers(HttpMethod.POST, "/vendors/register/verify-otp").permitAll()
                         .requestMatchers(HttpMethod.POST, "/vendors/register/complete").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/identity/cccd/verify").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/identity/cccd/verify-with-face").permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/vendors/register/**",
