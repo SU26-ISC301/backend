@@ -25,5 +25,7 @@ public class VendorOnboardingRequest {
     private VendorCategory category;
     private String shopEmail;
     private String shopPhone;
+    private String cccd;
     private String taxCode;
+    private String ownerDateOfBirth;
 }

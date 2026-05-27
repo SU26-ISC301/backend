@@ -3,7 +3,6 @@ package com.su26isc301.backend.service;
 import com.su26isc301.backend.dto.request.VendorRegisterRequest;
 import com.su26isc301.backend.dto.request.VendorOnboardingRequest;
 import com.su26isc301.backend.dto.request.VendorUpdateRequest;
-import com.su26isc301.backend.dto.response.CccdFaceVerificationResponse;
 import com.su26isc301.backend.entity.Profile;
 import com.su26isc301.backend.entity.Vendor;
 import com.su26isc301.backend.enums.Roles;
@@ -19,7 +18,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -35,7 +33,6 @@ public class VendorService {
 
     private final VendorRepository vendorRepository;
     private final ProfileRepository profileRepository;
-    private final FptCccdVerificationService fptCccdVerificationService;
 
     @Value("${supabase.url}")
     private String supabaseUrl;
@@ -73,25 +70,11 @@ public class VendorService {
     }
 
     @Transactional
-    public Vendor registerVendorOnboarding(
-            VendorOnboardingRequest request,
-            MultipartFile frontImage,
-            MultipartFile backImage,
-            MultipartFile faceImage
-    ) {
+    public Vendor registerVendorOnboarding(VendorOnboardingRequest request) {
         String email = normalizeEmail(request.getEmail());
         String ownerPhone = normalizePhone(request.getOwnerPhone());
         validateOnboardingRequest(request, email);
-
-        CccdFaceVerificationResponse verification = fptCccdVerificationService.verifyWithFace(
-                frontImage,
-                backImage,
-                faceImage
-        );
-        if (!verification.isVerified()) {
-            throw new RuntimeException(verification.getMessage());
-        }
-        LocalDate ownerDateOfBirth = extractOwnerDateOfBirth(verification);
+        LocalDate ownerDateOfBirth = parseDateOfBirth(request.getOwnerDateOfBirth());
 
         Profile profile = profileRepository.findByEmail(email)
                 .orElseGet(() -> createProfileForNewVendor(request, email, ownerPhone, ownerDateOfBirth));
@@ -109,7 +92,6 @@ public class VendorService {
         if (profile.getDateOfBirth() == null) {
             profile.setDateOfBirth(ownerDateOfBirth);
         }
-
         profile.setRole(Roles.vendor);
         profileRepository.save(profile);
 
@@ -121,7 +103,7 @@ public class VendorService {
                 .email(normalizeEmail(request.getShopEmail()))
                 .phone(normalizePhone(request.getShopPhone()))
                 .category(categoryValue(request.getCategory()))
-                .cccd(verification.getCccd().getCccdNumber())
+                .cccd(blankToNull(request.getCccd()))
                 .taxCode(blankToNull(request.getTaxCode()))
                 .build();
 
@@ -254,6 +236,19 @@ public class VendorService {
         if (request.getCategory() == null) {
             throw new RuntimeException("Danh mục bán hàng là bắt buộc");
         }
+        if (blankToNull(request.getCccd()) == null) {
+            throw new RuntimeException("Số CCCD là bắt buộc. Vui lòng xác thực CCCD trước khi đăng ký");
+        }
+        String taxCode = blankToNull(request.getTaxCode());
+        if (taxCode == null) {
+            throw new RuntimeException("Mã số thuế là bắt buộc");
+        }
+        if (!taxCode.matches("\\d{1,12}")) {
+            throw new RuntimeException("Mã số thuế chỉ gồm chữ số và không quá 12 chữ số");
+        }
+        if (blankToNull(request.getOwnerDateOfBirth()) == null) {
+            throw new RuntimeException("Ngày sinh chủ shop là bắt buộc. Vui lòng xác thực CCCD trước khi đăng ký");
+        }
     }
 
     private String normalizeEmail(String email) {
@@ -281,31 +276,13 @@ public class VendorService {
         return category == null ? null : category.getValue();
     }
 
-    private LocalDate extractOwnerDateOfBirth(CccdFaceVerificationResponse verification) {
-        Map<String, Object> frontData = Optional.ofNullable(verification.getCccd())
-                .map(cccd -> cccd.getFront())
-                .map(front -> front.getExtractedData())
-                .orElse(Map.of());
-
-        String rawDateOfBirth = firstNonBlank(
-                frontData,
-                "dob",
-                "date_of_birth",
-                "dateOfBirth",
-                "birthday",
-                "birth_day",
-                "birthDate",
-                "ngay_sinh"
-        );
-        if (rawDateOfBirth == null) {
-            throw new RuntimeException("Không đọc được ngày sinh từ CCCD. Vui lòng kiểm tra lại ảnh mặt trước CCCD");
+    private LocalDate parseDateOfBirth(String rawDateOfBirth) {
+        String value = blankToNull(rawDateOfBirth);
+        if (value == null) {
+            throw new RuntimeException("Ngày sinh chủ shop là bắt buộc");
         }
 
-        return parseDateOfBirth(rawDateOfBirth);
-    }
-
-    private LocalDate parseDateOfBirth(String rawDateOfBirth) {
-        String normalized = rawDateOfBirth.trim().replace(".", "/").replace("-", "/");
+        String normalized = value.replace(".", "/").replace("-", "/");
         List<DateTimeFormatter> formatters = List.of(
                 DateTimeFormatter.ofPattern("d/M/yyyy"),
                 DateTimeFormatter.ofPattern("dd/MM/yyyy"),
@@ -315,23 +292,14 @@ public class VendorService {
         for (DateTimeFormatter formatter : formatters) {
             try {
                 if (formatter == DateTimeFormatter.ISO_LOCAL_DATE) {
-                    return LocalDate.parse(rawDateOfBirth.trim(), formatter);
+                    return LocalDate.parse(value, formatter);
                 }
                 return LocalDate.parse(normalized, formatter);
             } catch (DateTimeParseException ignored) {
             }
         }
 
-        throw new RuntimeException("Ngày sinh OCR từ CCCD không đúng định dạng hỗ trợ: " + rawDateOfBirth);
+        throw new RuntimeException("Ngày sinh chủ shop không đúng định dạng hỗ trợ: " + rawDateOfBirth);
     }
 
-    private String firstNonBlank(Map<String, Object> source, String... keys) {
-        for (String key : keys) {
-            Object value = source.get(key);
-            if (value != null && !value.toString().isBlank() && !"N/A".equalsIgnoreCase(value.toString())) {
-                return value.toString();
-            }
-        }
-        return null;
-    }
 }

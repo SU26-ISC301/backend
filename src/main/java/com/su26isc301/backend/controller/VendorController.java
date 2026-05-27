@@ -100,12 +100,7 @@ public class VendorController {
 
         try {
             request.setEmail(email);
-            Vendor newVendor = vendorService.registerVendorOnboarding(
-                    request,
-                    form.getFrontImage(),
-                    form.getBackImage(),
-                    form.getFaceImage()
-            );
+            Vendor newVendor = vendorService.registerVendorOnboarding(request);
             otpService.removeOtp(email);
             return new ResponseEntity<>(
                     ApiResponse.success("Đăng ký Seller thành công!", newVendor),
@@ -195,7 +190,9 @@ public class VendorController {
         request.setCategory(VendorCategory.fromValue(form.getCategory()));
         request.setShopEmail(form.getShopEmail());
         request.setShopPhone(form.getShopPhone());
+        request.setCccd(form.getCccd());
         request.setTaxCode(form.getTaxCode());
+        request.setOwnerDateOfBirth(form.getOwnerDateOfBirth());
         return request;
     }
 }
