@@ -1,15 +1,27 @@
 package com.su26isc301.backend.controller;
 
+import com.su26isc301.backend.dto.request.VendorCompleteFormRequest;
+import com.su26isc301.backend.dto.request.VendorEmailOtpRequest;
+import com.su26isc301.backend.dto.request.VendorOtpVerifyRequest;
+import com.su26isc301.backend.dto.request.VendorOnboardingRequest;
 import com.su26isc301.backend.dto.request.VendorRegisterRequest;
 import com.su26isc301.backend.dto.request.VendorUpdateRequest;
 import com.su26isc301.backend.dto.response.ApiResponse;
+import com.su26isc301.backend.dto.response.VendorOtpVerifyResponse;
+import com.su26isc301.backend.entity.Profile;
 import com.su26isc301.backend.entity.Vendor;
+import com.su26isc301.backend.enums.VendorCategory;
+import com.su26isc301.backend.service.OtpService;
 import com.su26isc301.backend.service.VendorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -18,6 +30,91 @@ import java.util.UUID;
 public class VendorController {
 
     private final VendorService vendorService;
+    private final OtpService otpService;
+
+    @PostMapping("/register/start")
+    public ResponseEntity<ApiResponse<Map<String, String>>> startVendorRegister(
+            @RequestBody VendorEmailOtpRequest request
+    ) {
+        String email = normalizeEmail(request.getEmail());
+        if (email == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("Email là bắt buộc"));
+        }
+
+        otpService.generateAndSendOtp(email);
+        return ResponseEntity.ok(ApiResponse.success(
+                "Vui lòng kiểm tra email để lấy mã OTP xác nhận.",
+                Map.of("email", email)
+        ));
+    }
+
+    @PostMapping("/register/verify-otp")
+    public ResponseEntity<ApiResponse<VendorOtpVerifyResponse>> verifyVendorRegisterOtp(
+            @RequestBody VendorOtpVerifyRequest request
+    ) {
+        String email = normalizeEmail(request.getEmail());
+        String otp = request.getOtp() == null ? null : request.getOtp().trim();
+        if (email == null || otp == null || otp.isBlank()) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("Email và OTP là bắt buộc"));
+        }
+        if (!otpService.verifyOtp(email, otp)) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("OTP không hợp lệ hoặc đã hết hạn"));
+        }
+        otpService.markEmailVerified(email);
+
+        Optional<Profile> profile = vendorService.findProfileByEmail(email);
+        VendorOtpVerifyResponse response = profile
+                .map(existingProfile -> VendorOtpVerifyResponse.builder()
+                        .existingBuyer(true)
+                        .requiresPassword(false)
+                        .ownerPhoneLocked(existingProfile.getPhone() != null)
+                        .alreadyRegisteredVendor(vendorService.hasVendor(existingProfile))
+                        .profileId(existingProfile.getId())
+                        .email(existingProfile.getEmail())
+                        .ownerPhone(existingProfile.getPhone())
+                        .build())
+                .orElseGet(() -> VendorOtpVerifyResponse.builder()
+                        .existingBuyer(false)
+                        .requiresPassword(true)
+                        .ownerPhoneLocked(false)
+                        .alreadyRegisteredVendor(false)
+                        .email(email)
+                        .build());
+
+        return ResponseEntity.ok(ApiResponse.success("Xác thực OTP thành công", response));
+    }
+
+    @PostMapping(value = "/register/complete", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<Vendor>> completeVendorRegister(
+            @ModelAttribute VendorCompleteFormRequest form
+    ) {
+        VendorOnboardingRequest request = toOnboardingRequest(form);
+
+        String email = normalizeEmail(request.getEmail());
+        if (email == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("Email là bắt buộc"));
+        }
+        if (!otpService.isEmailVerified(email)) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("Email chưa được xác thực OTP hoặc phiên xác thực đã hết hạn"));
+        }
+
+        try {
+            request.setEmail(email);
+            Vendor newVendor = vendorService.registerVendorOnboarding(
+                    request,
+                    form.getFrontImage(),
+                    form.getBackImage(),
+                    form.getFaceImage()
+            );
+            otpService.removeOtp(email);
+            return new ResponseEntity<>(
+                    ApiResponse.success("Đăng ký Seller thành công!", newVendor),
+                    HttpStatus.CREATED
+            );
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
 
     // 1. Đăng ký mở cửa hàng mới
     @PostMapping("/register")
@@ -79,5 +176,26 @@ public class VendorController {
                 .data(vendors)
                 .build();
         return ResponseEntity.ok(response);
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        return email.trim().toLowerCase();
+    }
+
+    private VendorOnboardingRequest toOnboardingRequest(VendorCompleteFormRequest form) {
+        VendorOnboardingRequest request = new VendorOnboardingRequest();
+        request.setEmail(form.getEmail());
+        request.setPassword(form.getPassword());
+        request.setConfirmPassword(form.getConfirmPassword());
+        request.setOwnerPhone(form.getOwnerPhone());
+        request.setShopName(form.getShopName());
+        request.setCategory(VendorCategory.fromValue(form.getCategory()));
+        request.setShopEmail(form.getShopEmail());
+        request.setShopPhone(form.getShopPhone());
+        request.setTaxCode(form.getTaxCode());
+        return request;
     }
 }

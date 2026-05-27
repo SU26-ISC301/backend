@@ -38,6 +38,9 @@ public class Vendor {
     @Column(name = "phone")
     private String phone;
 
+    @Column(name = "category")
+    private String category;
+
     @Column(name = "status", nullable = false)
     @Builder.Default
     private String status = "active";
@@ -55,4 +58,13 @@ public class Vendor {
 
     @Column(name = "tax_code")
     private String taxCode;
+
+    @Column(name = "cccd_front_image_url")
+    private String cccdFrontImageUrl;
+
+    @Column(name = "cccd_back_image_url")
+    private String cccdBackImageUrl;
+
+    @Column(name = "face_image_url")
+    private String faceImageUrl;
 }

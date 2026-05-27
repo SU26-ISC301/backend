@@ -4,10 +4,12 @@ import com.su26isc301.backend.filter.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -29,11 +31,19 @@ public class SecurityConfig {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
+                .exceptionHandling(exception -> exception
+                        .accessDeniedHandler(accessDeniedHandler())
+                )
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/vendors/register/start").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/vendors/register/verify-otp").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/vendors/register/complete").permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
+                                "/vendors/register/**",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
@@ -44,15 +54,27 @@ public class SecurityConfig {
         return http.build();
     }
 
+    @Bean
+    public AccessDeniedHandler accessDeniedHandler() {
+        return (request, response, accessDeniedException) -> {
+            response.setStatus(403);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("""
+                    {"success":false,"message":"Access denied: %s","path":"%s"}
+                    """.formatted(accessDeniedException.getMessage(), request.getRequestURI()));
+        };
+    }
+
     // THÊM TOÀN BỘ CỤC NÀY VÀO ĐỂ TRỊ DỨT ĐIỂM LỖI CORS CỦA SPRING SECURITY
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Cho phép các domain này gọi API
-        configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:3000",
-                "https://5bros.vercel.app/"
+        // Cho phép Swagger/local frontend gọi API trong lúc dev.
+        configuration.setAllowedOriginPatterns(Arrays.asList(
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "https://5bros.vercel.app"
         ));
 
         // Cho phép các method
