@@ -15,6 +15,7 @@ import com.su26isc301.backend.enums.Roles;
 import com.su26isc301.backend.repository.ProfileRepository;
 import com.su26isc301.backend.service.JwtService;
 import com.su26isc301.backend.service.OtpService;
+import com.su26isc301.backend.service.SupabaseStorageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,7 @@ public class AuthController {
 
     private final JwtService jwtService;
     private final ProfileRepository profileRepository;
+    private final SupabaseStorageService supabaseStorageService;
 
     private final OtpService otpService;
     private static final long MAX_AVATAR_SIZE_BYTES = 5L * 1024 * 1024;
@@ -60,9 +62,9 @@ public class AuthController {
     private String supabaseServiceRoleKey;
 
 
-@PostMapping("/register")
-@Operation(summary = "Bước 1: Yêu cầu đăng ký (Hệ thống sẽ gửi OTP vào email)")
-public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
+    @PostMapping("/register")
+    @Operation(summary = "Bước 1: Yêu cầu đăng ký (Hệ thống sẽ gửi OTP vào email)")
+    public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
     try {
         String email = normalizeEmail(request.getEmail());
         String phone = normalizePhone(request.getPhone());
@@ -406,28 +408,58 @@ public ResponseEntity<?> requestRegister(@RequestBody RegisterRequest request) {
             @RequestHeader("Authorization") String authHeader,
             @RequestPart("avatar") MultipartFile avatar
     ) {
+//        try {
+//            Profile profile = getProfileFromAuthHeader(authHeader);
+//            validateAvatar(avatar);
+//
+//            String extension = getExtension(avatar.getOriginalFilename(), avatar.getContentType());
+//            String fileName = profile.getId() + "-" + System.currentTimeMillis() + extension;
+//            Path avatarDir = Path.of("uploads", "avatars").toAbsolutePath().normalize();
+//            Files.createDirectories(avatarDir);
+//            Path destination = avatarDir.resolve(fileName).normalize();
+//            avatar.transferTo(destination);
+//
+//            String avatarUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
+//                    .path("/api/auth/uploads/avatars/")
+//                    .path(fileName)
+//                    .toUriString();
+//            profile.setAvatarUrl(avatarUrl);
+//
+//            return ResponseEntity.ok(ApiResponse.success("Cập nhật ảnh đại diện thành công", profileRepository.save(profile)));
+//        } catch (RuntimeException e) {
+//            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+//        } catch (IOException e) {
+//            return ResponseEntity.internalServerError().body(ApiResponse.error("Không thể lưu ảnh đại diện"));
+//        }
         try {
+            // 1. Lấy thông tin profile từ token và kiểm tra tính hợp lệ của ảnh
             Profile profile = getProfileFromAuthHeader(authHeader);
             validateAvatar(avatar);
 
-            String extension = getExtension(avatar.getOriginalFilename(), avatar.getContentType());
-            String fileName = profile.getId() + "-" + System.currentTimeMillis() + extension;
-            Path avatarDir = Path.of("uploads", "avatars").toAbsolutePath().normalize();
-            Files.createDirectories(avatarDir);
-            Path destination = avatarDir.resolve(fileName).normalize();
-            avatar.transferTo(destination);
+            // [THÊM MỚI 1]: Lấy đường dẫn ảnh cũ (nếu có) trước khi nó bị ghi đè
+            String oldAvatarUrl = profile.getAvatarUrl();
 
-            String avatarUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
-                    .path("/api/auth/uploads/avatars/")
-                    .path(fileName)
-                    .toUriString();
-            profile.setAvatarUrl(avatarUrl);
+            // 2. GỌI SUPABASE SERVICE: Đẩy trực tiếp file mới lên bucket 'avatars'
+            String newAvatarUrl = supabaseStorageService.uploadFile(avatar, "avatars");
 
-            return ResponseEntity.ok(ApiResponse.success("Cập nhật ảnh đại diện thành công", profileRepository.save(profile)));
+            // [THÊM MỚI 2]: Gọi hàm dọn rác, truyền link ảnh cũ vào để Supabase xóa đi
+            if (oldAvatarUrl != null) {
+                supabaseStorageService.deleteFile(oldAvatarUrl, "avatars");
+            }
+
+            // 3. Lưu chuỗi URL công khai ảnh MỚI vào trường avatarUrl của Database
+            profile.setAvatarUrl(newAvatarUrl);
+            Profile savedProfile = profileRepository.save(profile);
+
+            // 4. Trả kết quả thành công về cho Frontend
+            return ResponseEntity.ok(ApiResponse.success("Cập nhật ảnh đại diện thành công", savedProfile));
+
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
         } catch (IOException e) {
-            return ResponseEntity.internalServerError().body(ApiResponse.error("Không thể lưu ảnh đại diện"));
+            // Bổ sung catch lỗi IOException do hàm uploadFile của Supabase ném ra khi xử lý byte array
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Lỗi trong quá trình truyền tải dữ liệu hình ảnh lên hệ thống đám mây"));
         }
     }
 

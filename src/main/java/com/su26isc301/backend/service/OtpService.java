@@ -24,7 +24,7 @@ public class OtpService {
     private final Map<String, LocalDateTime> verifiedEmailStore = new ConcurrentHashMap<>();
     private final java.security.SecureRandom random = new java.security.SecureRandom();
 
-    @Value("${app.otp.expire-seconds:60}")
+    @Value("${app.otp.expire-seconds:120}")
     private long otpExpireSeconds;
 
     @Value("${app.vendor.email-verified-seconds:600}")
