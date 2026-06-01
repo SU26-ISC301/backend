@@ -5,6 +5,7 @@ import com.su26isc301.backend.repository.ProfileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -25,5 +26,9 @@ public class ProfileService {
             throw new RuntimeException("Số điện thoại này đã tồn tại");
         }
         return profileRepository.save(profile);
+    }
+
+    public List<Profile> getAllProfiles() {
+        return profileRepository.findAll();
     }
 }

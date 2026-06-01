@@ -1,5 +1,7 @@
 package com.su26isc301.backend.filter;
 
+import com.su26isc301.backend.entity.Profile;
+import com.su26isc301.backend.repository.ProfileRepository;
 import com.su26isc301.backend.service.JwtService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -21,6 +23,8 @@ import java.util.List;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    // Bước 1: Tiêm ProfileRepository vào đây để gọi Database
+    private final ProfileRepository profileRepository;
 
     @Override
     protected void doFilterInternal(
@@ -39,16 +43,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String token = authHeader.substring(7);
 
         if (jwtService.isTokenValid(token)) {
-            String userId = jwtService.extractUserId(token);
             String email = jwtService.extractEmail(token);
+            profileRepository.findByEmail(email).ifPresent(profile -> {
+                String realRole = profile.getRole().name();
 
-            UsernamePasswordAuthenticationToken auth =
-                    new UsernamePasswordAuthenticationToken(
-                            email, null,
-                            List.of(new SimpleGrantedAuthority("ROLE_USER"))
-                    );
-            auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(auth);
+                UsernamePasswordAuthenticationToken auth =
+                        new UsernamePasswordAuthenticationToken(
+                                email, null,
+                                List.of(new SimpleGrantedAuthority(realRole))
+                        );
+                auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(auth);
+            });
         }
 
         filterChain.doFilter(request, response);
