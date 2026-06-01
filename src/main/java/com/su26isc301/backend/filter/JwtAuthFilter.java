@@ -38,18 +38,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = authHeader.substring(7);
 
-        if (jwtService.isTokenValid(token)) {
-            String userId = jwtService.extractUserId(token);
-            String email = jwtService.extractEmail(token);
-
-            UsernamePasswordAuthenticationToken auth =
-                    new UsernamePasswordAuthenticationToken(
-                            email, null,
-                            List.of(new SimpleGrantedAuthority("ROLE_USER"))
-                    );
-            auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(auth);
+        if (!jwtService.isTokenValid(token)) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("""
+                    {"success":false,"message":"Phiên đăng nhập không hợp lệ hoặc đã hết hạn"}
+                    """);
+            return;
         }
+
+        String email = jwtService.extractEmail(token);
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken(
+                        email, null,
+                        List.of(new SimpleGrantedAuthority("ROLE_USER"))
+                );
+        auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        SecurityContextHolder.getContext().setAuthentication(auth);
 
         filterChain.doFilter(request, response);
     }
