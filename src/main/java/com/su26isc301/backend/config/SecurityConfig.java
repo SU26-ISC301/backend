@@ -1,5 +1,6 @@
 package com.su26isc301.backend.config;
 
+import com.su26isc301.backend.enums.Roles;
 import com.su26isc301.backend.filter.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -50,6 +51,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/vendors/register/complete").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/identity/cccd/verify").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/identity/cccd/verify-with-face").permitAll()
+                        .requestMatchers("/api/admin/**").hasAuthority(Roles.admin.name())
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/uploads/**",
