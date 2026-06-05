@@ -54,7 +54,7 @@ public class Product {
 
     // Các mối quan hệ 1-N phục vụ cho việc cascade (xóa/sửa tự động nếu cần)
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<ProductImage> images;
+    private List<ProductMedia> productMediaList;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProductVariant> variants;
