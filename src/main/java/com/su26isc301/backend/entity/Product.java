@@ -2,19 +2,21 @@ package com.su26isc301.backend.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @Entity
-@Table(name = "products", schema = "public")
+@Table(name = "products")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class Product {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -24,8 +26,12 @@ public class Product {
     private Vendor vendor;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id")
+    @JoinColumn(name = "category_id", nullable = false)
     private Category category;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "brand_id")
+    private Brand brand;
 
     @Column(nullable = false)
     private String name;
@@ -33,7 +39,7 @@ public class Product {
     @Column(nullable = false, unique = true)
     private String slug;
 
-    @Column(columnDefinition = "text")
+    @Column(columnDefinition = "TEXT")
     private String description;
 
     @Column(name = "sold_count")
@@ -44,17 +50,63 @@ public class Product {
     @Builder.Default
     private BigDecimal avgRating = BigDecimal.ZERO;
 
+    @Column(name = "status")
+    @Builder.Default
+    private String status = "draft";
+
+    @Column(name = "contains_dangerous_goods")
+    @Builder.Default
+    private String containsDangerousGoods = "no";
+
+    @Column(name = "dangerous_goods_type")
+    private String dangerousGoodsType;
+
+    @Column(name = "safety_warning", columnDefinition = "TEXT")
+    private String safetyWarning;
+
+    @Column(name = "warranty_type")
+    private String warrantyType;
+
+    @Column(name = "origin_country")
+    private String originCountry;
+
+    @Column(name = "condition")
+    @Builder.Default
+    private String condition = "new";
+
+    @Column(name = "parcel_weight_g")
+    private Integer parcelWeightG;
+
+    @Column(name = "parcel_width")
+    private Integer parcelWidth;
+
+    @Column(name = "parcel_length")
+    private Integer parcelLength;
+
+    @Column(name = "parcel_height")
+    private Integer parcelHeight;
+
+    @Column(name = "delivery_method")
+    @Builder.Default
+    private String deliveryMethod = "default";
+
     @Column(name = "is_active")
     @Builder.Default
     private Boolean isActive = true;
 
-    @Column(name = "created_at")
-    @Builder.Default
-    private OffsetDateTime createdAt = OffsetDateTime.now();
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private ZonedDateTime createdAt;
 
-    // Các mối quan hệ 1-N phục vụ cho việc cascade (xóa/sửa tự động nếu cần)
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private ZonedDateTime updatedAt;
+
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<ProductImage> images;
+    private List<ProductMedia> mediaList;
+
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ProductAttribute> attributes;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProductVariant> variants;
