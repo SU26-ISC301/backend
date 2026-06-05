@@ -1,11 +1,13 @@
 package com.su26isc301.backend.entity;
 
 import jakarta.persistence.*;
-import lombok.*; // Import đầy đủ các annotation của lombok
+import lombok.*;
+
 import java.math.BigDecimal;
+import java.util.List;
 
 @Entity
-@Table(name = "product_variants", schema = "public")
+@Table(name = "product_variants")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -23,6 +25,9 @@ public class ProductVariant {
     @Column(unique = true)
     private String sku;
 
+    @Column(name = "seller_sku")
+    private String sellerSku;
+
     @Column(nullable = false)
     private BigDecimal price;
 
@@ -30,10 +35,23 @@ public class ProductVariant {
     @Builder.Default
     private Integer stock = 0;
 
+    @Column(name = "discount_percent")
+    @Builder.Default
+    private Integer discountPercent = 0;
+
+    @Column(name = "parcel_weight_g")
+    private Integer parcelWeightG;
+
+    @Column(name = "combination_key")
+    private String combinationKey;
+
+    @Column(name = "image_url")
+    private String imageUrl;
+
     @Column(name = "is_active")
     @Builder.Default
     private Boolean isActive = true;
 
-    @Column(name = "image_url")
-    private String imageUrl;
+    @OneToMany(mappedBy = "variant", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<VariantAttributeValue> variantAttributeValues;
 }

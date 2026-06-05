@@ -3,14 +3,16 @@ package com.su26isc301.backend.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.List;
+
 @Entity
-@Table(name = "product_media")
+@Table(name = "product_attributes")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class ProductMedia {
+public class ProductAttribute {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -19,18 +21,13 @@ public class ProductMedia {
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
 
-    @Column(name = "media_url", nullable = false)
-    private String mediaUrl;
-
-    @Column(name = "is_main")
-    @Builder.Default
-    private Boolean isMain = false;
-
-    @Column(name = "media_type")
-    @Builder.Default
-    private String mediaType = "image";
+    @Column(nullable = false)
+    private String name;
 
     @Column(name = "sort_order")
     @Builder.Default
     private Integer sortOrder = 0;
+
+    @OneToMany(mappedBy = "attribute", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ProductAttributeValue> values;
 }
