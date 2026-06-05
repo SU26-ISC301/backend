@@ -4,14 +4,13 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "product_images", schema = "public")
+@Table(name = "product_media")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class ProductImage {
-
+public class ProductMedia {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -20,10 +19,18 @@ public class ProductImage {
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
 
-    @Column(name = "image_url", nullable = false)
-    private String imageUrl;
+    @Column(name = "media_url", nullable = false)
+    private String mediaUrl;
 
     @Column(name = "is_main")
     @Builder.Default
     private Boolean isMain = false;
+
+    @Column(name = "media_type")
+    @Builder.Default
+    private String mediaType = "image";
+
+    @Column(name = "sort_order")
+    @Builder.Default
+    private Integer sortOrder = 0;
 }
