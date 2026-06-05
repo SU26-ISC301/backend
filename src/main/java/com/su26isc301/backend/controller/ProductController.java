@@ -4,11 +4,15 @@ import com.su26isc301.backend.dto.request.ProductCreateRequest;
 import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.ProductResponse;
 import com.su26isc301.backend.service.ProductService;
+import com.su26isc301.backend.service.SupabaseStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 @RestController
@@ -17,6 +21,7 @@ import java.util.List;
 public class ProductController {
 
     private final ProductService productService;
+    private final SupabaseStorageService supabaseStorageService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<ProductResponse>> createProduct(
@@ -61,5 +66,23 @@ public class ProductController {
         productService.deleteProduct(email, id, hard);
         String msg = hard ? "Xóa cứng sản phẩm thành công" : "Xóa mềm sản phẩm thành công";
         return ResponseEntity.ok(ApiResponse.success(msg, null));
+    }
+
+    @PostMapping("/upload-media")
+    public ResponseEntity<ApiResponse<List<String>>> uploadProductMedia(
+            @RequestParam("files") MultipartFile[] files
+    ) {
+        List<String> uploadedUrls = new ArrayList<>();
+        try {
+            for (MultipartFile file : files) {
+                if (file != null && !file.isEmpty()) {
+                    String url = supabaseStorageService.uploadFile(file, "product-media");
+                    uploadedUrls.add(url);
+                }
+            }
+            return ResponseEntity.ok(ApiResponse.success("Upload ảnh/video sản phẩm thành công", uploadedUrls));
+        } catch (IOException e) {
+            return ResponseEntity.status(500).body(ApiResponse.error("Lỗi khi upload file: " + e.getMessage()));
+        }
     }
 }

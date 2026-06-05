@@ -7,6 +7,9 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -95,5 +98,36 @@ public class SupabaseStorageService {
         } catch (Exception e) {
             System.err.println("Không thể xóa file cũ trên Supabase: " + e.getMessage());
         }
+    }
+
+    /**
+     * Lấy danh sách thông tin các file trong bucket (dùng để so sánh dọn rác)
+     * @param bucketName Tên bucket
+     * @return Danh sách maps chứa thông tin file (name, created_at, v.v.)
+     */
+    public List<Map<String, Object>> listFiles(String bucketName) {
+        String url = String.format("%s/storage/v1/object/list/%s", supabaseUrl, bucketName);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", "Bearer " + supabaseAnonKey);
+        headers.set("apiKey", supabaseAnonKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("limit", 1000);
+        body.put("offset", 0);
+        body.put("sortBy", Map.of("column", "name", "order", "asc"));
+
+        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+        try {
+            ResponseEntity<List> response = restTemplate.exchange(url, HttpMethod.POST, requestEntity, List.class);
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                return (List<Map<String, Object>>) response.getBody();
+            }
+        } catch (Exception e) {
+            System.err.println("Không thể lấy danh sách file từ Supabase: " + e.getMessage());
+        }
+        return List.of();
     }
 }
