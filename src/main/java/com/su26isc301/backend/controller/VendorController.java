@@ -101,17 +101,16 @@ public class VendorController {
     public ResponseEntity<ApiResponse<Vendor>> completeVendorRegister(
             @ModelAttribute VendorCompleteFormRequest form
     ) {
-        VendorOnboardingRequest request = toOnboardingRequest(form);
-
-        String email = normalizeEmail(request.getEmail());
-        if (email == null) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("Email là bắt buộc"));
-        }
-        if (!otpService.isEmailVerified(email)) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("Email chưa được xác thực OTP hoặc phiên xác thực đã hết hạn"));
-        }
-
         try {
+            VendorOnboardingRequest request = toOnboardingRequest(form);
+            String email = normalizeEmail(request.getEmail());
+            if (email == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Email là bắt buộc"));
+            }
+            if (!otpService.isEmailVerified(email)) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Email chưa được xác thực OTP hoặc phiên xác thực đã hết hạn"));
+            }
+
             request.setEmail(email);
             Vendor newVendor = vendorService.registerVendorOnboarding(request);
             otpService.removeOtp(email);
