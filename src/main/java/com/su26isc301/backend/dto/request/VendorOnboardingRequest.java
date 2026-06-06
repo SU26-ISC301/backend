@@ -14,13 +14,10 @@ public class VendorOnboardingRequest {
 
     private String shopName;
     @Schema(allowableValues = {
-            "Thời trang",
-            "Mỹ phẩm",
-            "Gia dụng",
-            "Điện tử",
-            "Mẹ và bé",
-            "Sách",
-            "Văn phòng phẩm"
+            "dt-do-dien-tu",
+            "may-tinh-van-phong",
+            "thiet-bi-mang",
+            "tv-giai-tri"
     })
     private VendorCategory category;
     private String shopEmail;
