@@ -1,85 +1,399 @@
 package com.su26isc301.backend.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.su26isc301.backend.dto.response.MarketResearchResponse;
+import com.su26isc301.backend.entity.Profile;
+import com.su26isc301.backend.entity.Vendor;
+import com.su26isc301.backend.repository.ProfileRepository;
+import com.su26isc301.backend.repository.VendorRepository;
+import lombok.RequiredArgsConstructor;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
+@RequiredArgsConstructor
 public class MarketResearchService {
 
-    private static final String DEFAULT_CATEGORY_ID = "op-lung-bao-da";
+    private static final String DEFAULT_CATEGORY_ID = "dt-do-dien-tu";
+    private static final int MAX_PRODUCTS_PER_SOURCE = 8;
+    private static final List<String> QUERY_STOP_WORDS = List.of("va", "do", "the", "bi", "may");
+    private static final List<String> DEVICE_INTENT_TERMS = List.of(
+            "iphone", "ipad", "samsung", "galaxy", "oppo", "xiaomi", "redmi", "realme", "vivo",
+            "nokia", "honor", "huawei", "macbook", "laptop", "dien thoai", "may tinh bang"
+    );
+    private static final List<String> ACCESSORY_INTENT_TERMS = List.of(
+            "phu kien", "op lung", "bao da", "sac", "cap", "cable", "kinh cuong luc", "cuong luc",
+            "pin du phong", "tai nghe", "loa", "soundbar", "day deo", "mieng dan", "adapter"
+    );
+    private static final List<String> ACCESSORY_NOISE_TERMS = List.of(
+            "op lung", "bao da", "kinh cuong luc", "cuong luc", "mieng dan", "dan man hinh",
+            "sac", "cap", "cable", "cu sac", "day sac", "adapter", "pin du phong", "gia do", "pop socket"
+    );
+    private static final String USER_AGENT =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/125.0 Safari/537.36";
     private static final List<MarketResearchResponse.MarketCategoryOption> CATEGORY_TREE = buildCategoryTree();
-    private static final List<MarketSample> MARKET_SAMPLES = buildMarketSamples();
+    private static final List<SourceTarget> SOURCE_TARGETS = List.of(
+            new SourceTarget("CellPhoneS", "https://cellphones.com.vn/catalogsearch/result?q=%s", "https://cellphones.com.vn", 94),
+            new SourceTarget("FPT Shop", "https://fptshop.com.vn/tim-kiem?s=%s", "https://fptshop.com.vn", 95),
+            new SourceTarget("Điện Máy Xanh", "https://www.dienmayxanh.com/tim-kiem?key=%s", "https://www.dienmayxanh.com", 94),
+            new SourceTarget("Di Động Việt", "https://didongviet.vn/search/?q=%s", "https://didongviet.vn", 93)
+    );
+
+    private final ProfileRepository profileRepository;
+    private final VendorRepository vendorRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public List<MarketResearchResponse.MarketCategoryOption> getCategoryTree() {
         return CATEGORY_TREE;
     }
 
-    public MarketResearchResponse getAdminMarketResearch(String categoryId, String source, String query) {
-        String selectedCategoryId = StringUtils.hasText(categoryId) ? categoryId.trim() : DEFAULT_CATEGORY_ID;
-        MarketSample sample = findSample(selectedCategoryId).orElseGet(() -> buildFallbackSample(selectedCategoryId));
-        List<MarketResearchResponse.PriceSource> filteredSources = filterSources(sample.sources(), source, query);
+    public MarketResearchResponse getVendorMarketResearch(String email, String categoryId, String source, String query) {
+        MarketResearchResponse.MarketCategoryOption parent = getVendorParentCategory(email);
+        String selectedCategoryId = resolveSelectedCategoryId(parent, categoryId);
+        String selectedName = findCategoryPath(List.of(parent), selectedCategoryId).stream()
+                .reduce((first, second) -> second)
+                .map(MarketResearchResponse.MarketCategoryOption::getName)
+                .orElse(parent.getName());
+        return buildRealMarketResearch(List.of(parent), parent, selectedCategoryId, selectedName, source, query);
+    }
 
-        return MarketResearchResponse.builder()
-                .dataMode("MOCK")
-                .updatedAt(ZonedDateTime.now())
-                .categories(CATEGORY_TREE)
-                .selectedCategory(toInsight(sample))
-                .overview(buildOverview(filteredSources))
-                .sources(filteredSources)
-                .build();
+    public MarketResearchResponse getAdminMarketResearch(String categoryId, String source, String query) {
+        MarketResearchResponse.MarketCategoryOption parent = CATEGORY_TREE.stream()
+                .filter(item -> categoryContainsId(item, categoryId))
+                .findFirst()
+                .orElse(CATEGORY_TREE.getFirst());
+        String selectedCategoryId = resolveSelectedCategoryId(parent, categoryId);
+        String selectedName = findCategoryPath(CATEGORY_TREE, selectedCategoryId).stream()
+                .reduce((first, second) -> second)
+                .map(MarketResearchResponse.MarketCategoryOption::getName)
+                .orElse(parent.getName());
+        return buildRealMarketResearch(CATEGORY_TREE, parent, selectedCategoryId, selectedName, source, query);
     }
 
     public MarketResearchResponse syncAdminMarketResearch(String categoryId) {
         return getAdminMarketResearch(categoryId, null, null);
     }
 
-    private List<MarketResearchResponse.PriceSource> filterSources(
-            List<MarketResearchResponse.PriceSource> sources,
+    private MarketResearchResponse buildRealMarketResearch(
+            List<MarketResearchResponse.MarketCategoryOption> categoryTree,
+            MarketResearchResponse.MarketCategoryOption parent,
+            String selectedCategoryId,
+            String selectedName,
             String source,
             String query
     ) {
-        String normalizedSource = normalize(source);
-        String normalizedQuery = normalize(query);
-
-        return sources.stream()
-                .filter(item -> !StringUtils.hasText(source) || normalize(item.getSource()).equals(normalizedSource))
-                .filter(item -> !StringUtils.hasText(query) ||
-                        normalize(item.getSource() + " " + item.getPromo()).contains(normalizedQuery))
+        String effectiveQuery = StringUtils.hasText(query) ? query.trim() : selectedName;
+        List<MarketResearchResponse.PriceSource> sources = SOURCE_TARGETS.stream()
+                .filter(target -> !StringUtils.hasText(source) || normalize(target.name()).equals(normalize(source)))
+                .map(target -> scrapeSource(target, effectiveQuery))
                 .toList();
+        List<MarketResearchResponse.ProductItem> products = sources.stream()
+                .flatMap(item -> Optional.ofNullable(item.getProducts()).orElse(List.of()).stream())
+                .filter(item -> item.getPrice() != null && item.getPrice().compareTo(BigDecimal.ZERO) > 0)
+                .toList();
+
+        return MarketResearchResponse.builder()
+                .dataMode("REAL")
+                .updatedAt(ZonedDateTime.now())
+                .categories(categoryTree)
+                .selectedCategory(buildInsight(parent, selectedCategoryId, selectedName, effectiveQuery, products))
+                .overview(buildOverview(sources))
+                .sources(sources)
+                .build();
     }
 
-    private MarketResearchResponse.MarketCategoryInsight toInsight(MarketSample sample) {
+    private MarketResearchResponse.MarketCategoryInsight buildInsight(
+            MarketResearchResponse.MarketCategoryOption parent,
+            String categoryId,
+            String categoryName,
+            String keyword,
+            List<MarketResearchResponse.ProductItem> products
+    ) {
+        BigDecimal marketAverage = averagePrice(products);
+        BigDecimal recommended = marketAverage.compareTo(BigDecimal.ZERO) == 0
+                ? BigDecimal.ZERO
+                : roundMoney(marketAverage.multiply(BigDecimal.valueOf(0.98)));
+
         return MarketResearchResponse.MarketCategoryInsight.builder()
-                .id(sample.id())
-                .name(sample.name())
-                .keyword(sample.keyword())
-                .demand(sample.demand())
-                .trend(sample.trend())
-                .recommendedPrice(sample.recommendedPrice())
-                .marketAverage(sample.marketAverage())
-                .competitorCount(sample.competitorCount())
-                .sampleCount(sample.sampleCount())
-                .status(sample.status())
-                .strategy(sample.strategy())
-                .categoryPath(findCategoryPath(sample.id()).stream()
+                .id(categoryId)
+                .name(categoryName)
+                .parentCategoryId(parent.getId())
+                .parentCategoryName(parent.getName())
+                .keyword(keyword)
+                .demand(Math.min(100, products.size() * 8))
+                .trend(products.isEmpty() ? "Chưa đủ dữ liệu" : "Dữ liệu public mới nhất")
+                .recommendedPrice(recommended)
+                .marketAverage(marketAverage)
+                .competitorCount((int) SOURCE_TARGETS.stream().filter(source -> hasProducts(source.name(), products)).count())
+                .sampleCount(products.size())
+                .status(products.isEmpty() ? "Chưa có dữ liệu" : "Có dữ liệu thật")
+                .strategy(products.isEmpty()
+                        ? "Chưa lấy được dữ liệu public cho từ khóa này. Hãy thử từ khóa cụ thể hơn hoặc cập nhật lại sau."
+                        : "Giá đề xuất được tính từ dữ liệu public vừa lấy trên 4 shop. Nên đối chiếu lại trước khi nhập hàng hoặc chạy khuyến mãi.")
+                .categoryPath(findCategoryPath(List.of(parent), categoryId).stream()
                         .map(MarketResearchResponse.MarketCategoryOption::getName)
                         .toList())
                 .build();
     }
 
+    private boolean hasProducts(String sourceName, List<MarketResearchResponse.ProductItem> products) {
+        return products.stream().anyMatch(item -> item.getUrl() != null && item.getUrl().contains(sourceHost(sourceName)));
+    }
+
+    private String sourceHost(String sourceName) {
+        return SOURCE_TARGETS.stream()
+                .filter(item -> item.name().equals(sourceName))
+                .map(item -> item.rootUrl().replace("https://", ""))
+                .findFirst()
+                .orElse("");
+    }
+
+    private MarketResearchResponse.PriceSource scrapeSource(SourceTarget target, String query) {
+        String url = target.searchUrl().formatted(URLEncoder.encode(query, StandardCharsets.UTF_8));
+        try {
+            Document document = Jsoup.connect(url)
+                    .userAgent(USER_AGENT)
+                    .referrer(target.rootUrl())
+                    .timeout(15000)
+                    .followRedirects(true)
+                    .get();
+            List<MarketResearchResponse.ProductItem> products = extractProducts(document, target, query);
+            return buildPriceSource(target, url, products, null);
+        } catch (Exception ex) {
+            return unavailableSource(target, url, "Chưa lấy được dữ liệu public từ nguồn này, sẽ cập nhật sau.");
+        }
+    }
+
+    private List<MarketResearchResponse.ProductItem> extractProducts(
+            Document document,
+            SourceTarget target,
+            String query
+    ) {
+        Map<String, MarketResearchResponse.ProductItem> products = new LinkedHashMap<>();
+        addProducts(products, extractProductsFromJson(document, target, query));
+        addProducts(products, extractProductsFromDom(document, target, query));
+        addProducts(products, extractProductsFromText(document.html(), target, query));
+        return products.values().stream()
+                .limit(MAX_PRODUCTS_PER_SOURCE)
+                .toList();
+    }
+
+    private List<MarketResearchResponse.ProductItem> extractProductsFromJson(
+            Document document,
+            SourceTarget target,
+            String query
+    ) {
+        List<MarketResearchResponse.ProductItem> products = new ArrayList<>();
+        for (Element script : document.select("script[type=application/ld+json], script#__NEXT_DATA__")) {
+            String json = script.data();
+            if (!StringUtils.hasText(json)) {
+                json = script.html();
+            }
+            try {
+                JsonNode root = objectMapper.readTree(json);
+                collectJsonProducts(root, target, query, products);
+            } catch (Exception ignored) {
+                // Some sites use React Server Components instead of plain JSON.
+            }
+        }
+        return products;
+    }
+
+    private void collectJsonProducts(
+            JsonNode node,
+            SourceTarget target,
+            String query,
+            List<MarketResearchResponse.ProductItem> products
+    ) {
+        if (node == null || node.isNull()) return;
+
+        if (node.isObject()) {
+            String name = firstText(node, "displayName", "product", "name", "productName", "title");
+            BigDecimal price = firstMoney(node, "currentPrice", "price", "salePrice", "special_price", "final_price", "lowPrice");
+            if (price == null && node.has("offers")) {
+                price = firstMoney(node.get("offers"), "price", "lowPrice", "highPrice");
+            }
+            if (StringUtils.hasText(name) && price != null && productMatchesQuery(name, query)) {
+                String slug = firstText(node, "slug", "productSlug", "redirect_url", "url", "href");
+                String image = firstText(node, "thumbnail", "imageUrl", "image");
+                if (!StringUtils.hasText(image) && node.has("image") && node.get("image").isObject()) {
+                    image = firstText(node.get("image"), "src", "url");
+                }
+                products.add(MarketResearchResponse.ProductItem.builder()
+                        .name(cleanText(name))
+                        .price(price)
+                        .originalPrice(firstMoney(node, "originalPrice", "list_price", "oldPrice"))
+                        .url(toAbsoluteUrl(target.rootUrl(), slug))
+                        .imageUrl(toAbsoluteUrl(target.rootUrl(), image))
+                        .promo(cleanHtml(firstText(node, "promotion_info", "promo", "description")))
+                        .rating(firstMoney(node, "avg_point", "rating", "avgRating"))
+                        .availability(firstText(node, "status", "product_status", "availability"))
+                        .build());
+            }
+        }
+
+        if (node.isContainerNode()) {
+            node.elements().forEachRemaining(child -> collectJsonProducts(child, target, query, products));
+        }
+    }
+
+    private List<MarketResearchResponse.ProductItem> extractProductsFromDom(
+            Document document,
+            SourceTarget target,
+            String query
+    ) {
+        List<MarketResearchResponse.ProductItem> products = new ArrayList<>();
+        Elements cards = document.select(".listproduct .item, li.item, .product-item, .product-card, [class*=ProductCard], [class*=product-card]");
+        for (Element card : cards) {
+            String name = firstOwnText(card, ".product-title, h3, h2, [class*=name], [class*=Name], a[title]");
+            BigDecimal price = parseMoney(firstOwnText(card, ".price, [class*=price], [class*=Price]"));
+            if (!StringUtils.hasText(name) || price == null || !productMatchesQuery(name, query)) {
+                continue;
+            }
+            Element link = card.selectFirst("a[href]");
+            Element image = card.selectFirst("img[src], img[data-src]");
+            products.add(MarketResearchResponse.ProductItem.builder()
+                    .name(cleanText(name))
+                    .price(price)
+                    .url(toAbsoluteUrl(target.rootUrl(), link == null ? null : link.attr("href")))
+                    .imageUrl(toAbsoluteUrl(target.rootUrl(), image == null ? null : firstNonBlank(image.attr("src"), image.attr("data-src"))))
+                    .promo(cleanText(firstOwnText(card, ".item-gift, [class*=promo], [class*=Promotion]")))
+                    .rating(parseMoney(firstOwnText(card, ".vote-txt, [class*=rating], [class*=Rating]")))
+                    .availability(StringUtils.hasText(firstOwnText(card, ".item-txt-online")) ? firstOwnText(card, ".item-txt-online") : null)
+                    .build());
+        }
+        return products;
+    }
+
+    private List<MarketResearchResponse.ProductItem> extractProductsFromText(
+            String html,
+            SourceTarget target,
+            String query
+    ) {
+        String text = html
+                .replace("\\u002F", "/")
+                .replace("\\u0026", "&")
+                .replace("\\u003c", "<")
+                .replace("\\u003e", ">")
+                .replace("\\\"", "\"");
+        Pattern pattern = Pattern.compile(
+                "\"(?:displayName|product|name)\"\\s*:\\s*\"([^\"<>]{4,180})\"(.{0,1800}?)\"(?:currentPrice|price|salePrice|lowPrice)\"\\s*:\\s*\"?(\\d{5,12})\"?",
+                Pattern.CASE_INSENSITIVE | Pattern.DOTALL
+        );
+        Matcher matcher = pattern.matcher(text);
+        List<MarketResearchResponse.ProductItem> products = new ArrayList<>();
+        while (matcher.find() && products.size() < MAX_PRODUCTS_PER_SOURCE) {
+            String name = cleanText(matcher.group(1));
+            if (!productMatchesQuery(name, query)) continue;
+            String scope = matcher.group(2);
+            BigDecimal price = parseMoney(matcher.group(3));
+            String slug = firstRegex(scope, "\"(?:slug|productSlug|redirect_url|url|href)\"\\s*:\\s*\"([^\"]+)\"");
+            String image = firstRegex(scope, "\"(?:thumbnail|src|imageUrl)\"\\s*:\\s*\"([^\"]+)\"");
+            String promo = firstRegex(scope, "\"(?:promotion_info|description|promo)\"\\s*:\\s*\"([^\"]{1,220})\"");
+            products.add(MarketResearchResponse.ProductItem.builder()
+                    .name(name)
+                    .price(price)
+                    .url(toAbsoluteUrl(target.rootUrl(), slug))
+                    .imageUrl(toAbsoluteUrl(target.rootUrl(), image))
+                    .promo(cleanHtml(promo))
+                    .build());
+        }
+        return products;
+    }
+
+    private void addProducts(Map<String, MarketResearchResponse.ProductItem> target, List<MarketResearchResponse.ProductItem> items) {
+        for (MarketResearchResponse.ProductItem item : items) {
+            if (!StringUtils.hasText(item.getName()) || item.getPrice() == null) continue;
+            String key = normalize(item.getName()) + "-" + item.getPrice();
+            target.putIfAbsent(key, item);
+        }
+    }
+
+    private MarketResearchResponse.PriceSource buildPriceSource(
+            SourceTarget target,
+            String url,
+            List<MarketResearchResponse.ProductItem> products,
+            String message
+    ) {
+        if (products.isEmpty()) {
+            return unavailableSource(target, url, message == null
+                    ? "Chưa có dữ liệu phù hợp, sẽ cập nhật sau."
+                    : message);
+        }
+
+        BigDecimal min = products.stream().map(MarketResearchResponse.ProductItem::getPrice).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+        BigDecimal max = products.stream().map(MarketResearchResponse.ProductItem::getPrice).max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+        BigDecimal avg = averagePrice(products);
+        BigDecimal rating = products.stream()
+                .map(MarketResearchResponse.ProductItem::getRating)
+                .filter(item -> item != null && item.compareTo(BigDecimal.ZERO) > 0)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long ratingCount = products.stream()
+                .filter(item -> item.getRating() != null && item.getRating().compareTo(BigDecimal.ZERO) > 0)
+                .count();
+
+        return MarketResearchResponse.PriceSource.builder()
+                .source(target.name())
+                .min(min)
+                .avg(avg)
+                .max(max)
+                .sales(products.size() + " sản phẩm")
+                .rating(ratingCount == 0 ? BigDecimal.ZERO : rating.divide(BigDecimal.valueOf(ratingCount), 1, RoundingMode.HALF_UP))
+                .promo("Dữ liệu public")
+                .trust(target.trust())
+                .status("OK")
+                .message("Đã lấy dữ liệu thật từ trang public.")
+                .url(url)
+                .productCount(products.size())
+                .products(products)
+                .build();
+    }
+
+    private MarketResearchResponse.PriceSource unavailableSource(SourceTarget target, String url, String message) {
+        return MarketResearchResponse.PriceSource.builder()
+                .source(target.name())
+                .min(BigDecimal.ZERO)
+                .avg(BigDecimal.ZERO)
+                .max(BigDecimal.ZERO)
+                .sales("0 sản phẩm")
+                .rating(BigDecimal.ZERO)
+                .promo("Chưa có")
+                .trust(target.trust())
+                .status("PENDING")
+                .message(message)
+                .url(url)
+                .productCount(0)
+                .products(List.of())
+                .build();
+    }
+
     private MarketResearchResponse.MarketOverview buildOverview(List<MarketResearchResponse.PriceSource> sources) {
-        if (sources.isEmpty()) {
+        List<MarketResearchResponse.PriceSource> available = sources.stream()
+                .filter(item -> "OK".equals(item.getStatus()))
+                .toList();
+        if (available.isEmpty()) {
             return MarketResearchResponse.MarketOverview.builder()
                     .totalSources(0)
                     .priceSpreadPercent(BigDecimal.ZERO)
@@ -87,86 +401,68 @@ public class MarketResearchService {
                     .build();
         }
 
-        MarketResearchResponse.PriceSource lowest = sources.stream()
+        MarketResearchResponse.PriceSource lowest = available.stream()
                 .min(Comparator.comparing(MarketResearchResponse.PriceSource::getMin))
-                .orElse(sources.getFirst());
-        MarketResearchResponse.PriceSource highest = sources.stream()
+                .orElse(available.getFirst());
+        MarketResearchResponse.PriceSource trusted = available.stream()
                 .max(Comparator.comparing(MarketResearchResponse.PriceSource::getTrust))
-                .orElse(sources.getFirst());
-        BigDecimal min = sources.stream()
-                .map(MarketResearchResponse.PriceSource::getMin)
-                .min(BigDecimal::compareTo)
-                .orElse(BigDecimal.ZERO);
-        BigDecimal max = sources.stream()
-                .map(MarketResearchResponse.PriceSource::getMax)
-                .max(BigDecimal::compareTo)
-                .orElse(BigDecimal.ZERO);
-        BigDecimal averageTrust = BigDecimal.valueOf(
-                sources.stream().mapToInt(MarketResearchResponse.PriceSource::getTrust).average().orElse(0)
-        ).setScale(1, RoundingMode.HALF_UP);
+                .orElse(available.getFirst());
+        BigDecimal min = available.stream().map(MarketResearchResponse.PriceSource::getMin).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+        BigDecimal max = available.stream().map(MarketResearchResponse.PriceSource::getMax).max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
         BigDecimal spread = min.compareTo(BigDecimal.ZERO) == 0
                 ? BigDecimal.ZERO
-                : max.subtract(min)
-                .multiply(BigDecimal.valueOf(100))
-                .divide(min, 1, RoundingMode.HALF_UP);
+                : max.subtract(min).multiply(BigDecimal.valueOf(100)).divide(min, 1, RoundingMode.HALF_UP);
+        BigDecimal averageTrust = BigDecimal.valueOf(available.stream()
+                .mapToInt(MarketResearchResponse.PriceSource::getTrust)
+                .average()
+                .orElse(0)).setScale(1, RoundingMode.HALF_UP);
 
         return MarketResearchResponse.MarketOverview.builder()
-                .totalSources(sources.size())
+                .totalSources(available.size())
                 .lowestPriceSource(lowest.getSource())
                 .lowestPrice(lowest.getMin())
-                .highestTrustSource(highest.getSource())
-                .highestTrust(highest.getTrust())
+                .highestTrustSource(trusted.getSource())
+                .highestTrust(trusted.getTrust())
                 .priceSpreadPercent(spread)
                 .averageTrust(averageTrust)
                 .build();
     }
 
-    private Optional<MarketSample> findSample(String categoryId) {
-        return MARKET_SAMPLES.stream()
-                .filter(sample -> sample.id().equals(categoryId))
-                .findFirst();
+    private MarketResearchResponse.MarketCategoryOption getVendorParentCategory(String email) {
+        Profile profile = profileRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản Vendor"));
+        Vendor vendor = vendorRepository.findByProfile(profile)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy shop của Vendor"));
+        String vendorCategory = vendor.getCategory();
+        return CATEGORY_TREE.stream()
+                .filter(item -> normalize(item.getId()).equals(normalize(vendorCategory)) ||
+                        normalize(item.getName()).equals(normalize(vendorCategory)))
+                .findFirst()
+                .orElseGet(() -> CATEGORY_TREE.stream()
+                        .filter(item -> item.getId().equals(DEFAULT_CATEGORY_ID))
+                        .findFirst()
+                        .orElse(CATEGORY_TREE.getFirst()));
     }
 
-    private MarketSample buildFallbackSample(String categoryId) {
-        List<MarketResearchResponse.MarketCategoryOption> path = findCategoryPath(categoryId);
-        MarketResearchResponse.MarketCategoryOption leaf = path.isEmpty()
-                ? option(categoryId, "Hạng mục đang chọn")
-                : path.getLast();
-        int seed = leaf.getId().chars().sum();
-        BigDecimal basePrice = money(180000 + (long) (seed % 34) * 85000);
-        BigDecimal average = roundMoney(basePrice.multiply(BigDecimal.valueOf(1.08)));
-        BigDecimal recommended = roundMoney(basePrice.multiply(BigDecimal.valueOf(0.98)));
-
-        List<MarketResearchResponse.PriceSource> sources = List.of(
-                source("Shopee Mall", roundMoney(basePrice.multiply(BigDecimal.valueOf(0.86))), roundMoney(basePrice.multiply(BigDecimal.valueOf(1.02))), roundMoney(basePrice.multiply(BigDecimal.valueOf(1.18))), "3.200+", "4.6", "Voucher ngành hàng", 84),
-                source("TikTok Shop", roundMoney(basePrice.multiply(BigDecimal.valueOf(0.82))), roundMoney(basePrice.multiply(BigDecimal.valueOf(0.98))), roundMoney(basePrice.multiply(BigDecimal.valueOf(1.13))), "2.600+", "4.5", "Deal livestream", 79),
-                source("CellphoneS", roundMoney(basePrice.multiply(BigDecimal.valueOf(0.98))), roundMoney(basePrice.multiply(BigDecimal.valueOf(1.08))), roundMoney(basePrice.multiply(BigDecimal.valueOf(1.22))), "780+", "4.8", "Bảo hành chính hãng", 94),
-                source("FPT Shop", roundMoney(basePrice.multiply(BigDecimal.valueOf(1.02))), roundMoney(basePrice.multiply(BigDecimal.valueOf(1.12))), roundMoney(basePrice.multiply(BigDecimal.valueOf(1.26))), "640+", "4.7", "Trả góp 0%", 93),
-                source("Điện Máy Xanh", roundMoney(basePrice.multiply(BigDecimal.valueOf(1.04))), roundMoney(basePrice.multiply(BigDecimal.valueOf(1.15))), roundMoney(basePrice.multiply(BigDecimal.valueOf(1.30))), "520+", "4.7", "Đổi trả nhanh", 92)
-        );
-
-        return new MarketSample(
-                leaf.getId(),
-                leaf.getName(),
-                leaf.getName(),
-                68 + seed % 24,
-                seed % 3 == 0 ? "-1,6%" : "+" + (2 + seed % 8) + ",4%",
-                recommended,
-                average,
-                sources.size(),
-                54 + seed % 96,
-                seed % 3 == 0 ? "Theo dõi" : "Có cơ hội",
-                "Dữ liệu mô phỏng cho " + (path.isEmpty()
-                        ? leaf.getName()
-                        : String.join(" > ", path.stream().map(MarketResearchResponse.MarketCategoryOption::getName).toList()))
-                        + "; nên kiểm tra thêm giá thực tế trước khi nhập hàng hoặc chạy khuyến mãi.",
-                sources
-        );
+    private String resolveSelectedCategoryId(MarketResearchResponse.MarketCategoryOption parent, String categoryId) {
+        if (StringUtils.hasText(categoryId) && categoryContainsId(parent, categoryId.trim())) {
+            return categoryId.trim();
+        }
+        return parent.getId();
     }
 
-    private List<MarketResearchResponse.MarketCategoryOption> findCategoryPath(String categoryId) {
+    private boolean categoryContainsId(MarketResearchResponse.MarketCategoryOption node, String categoryId) {
+        if (!StringUtils.hasText(categoryId) || node == null) return false;
+        if (node.getId().equals(categoryId)) return true;
+        return node.getChildren() != null && node.getChildren().stream().anyMatch(child -> categoryContainsId(child, categoryId));
+    }
+
+    private List<MarketResearchResponse.MarketCategoryOption> findCategoryPath(
+            List<MarketResearchResponse.MarketCategoryOption> nodes,
+            String categoryId
+    ) {
         List<MarketResearchResponse.MarketCategoryOption> path = new ArrayList<>();
-        return findCategoryPath(CATEGORY_TREE, categoryId, path) ? path : List.of();
+        return findCategoryPath(nodes, categoryId, path) ? path : List.of();
     }
 
     private boolean findCategoryPath(
@@ -185,11 +481,147 @@ public class MarketResearchService {
         return false;
     }
 
+    private boolean productMatchesQuery(String name, String query) {
+        if (!StringUtils.hasText(query)) return true;
+        String normalizedName = normalize(name);
+        String normalizedQuery = normalize(query);
+        List<String> tokens = List.of(normalizedQuery.split("\\s+")).stream()
+                .filter(token -> token.length() >= 2 && !QUERY_STOP_WORDS.contains(token))
+                .toList();
+        if (tokens.isEmpty()) return true;
+        boolean hasDeviceIntent = hasAnyTerm(normalizedQuery, DEVICE_INTENT_TERMS);
+        boolean strictModelSearch = hasDeviceIntent && tokens.size() <= 5;
+        boolean matches = strictModelSearch
+                ? tokens.stream().allMatch(normalizedName::contains)
+                : tokens.stream().anyMatch(normalizedName::contains);
+        return matches && !isAccessoryNoise(normalizedName, normalizedQuery, hasDeviceIntent);
+    }
+
+    private boolean isAccessoryNoise(String normalizedName, String normalizedQuery, boolean hasDeviceIntent) {
+        if (hasAnyTerm(normalizedQuery, ACCESSORY_INTENT_TERMS)) return false;
+        boolean shouldExcludeAccessories = hasDeviceIntent
+                || normalizedQuery.contains("dien thoai")
+                || normalizedQuery.contains("may tinh bang");
+        return shouldExcludeAccessories && hasAnyTerm(normalizedName, ACCESSORY_NOISE_TERMS);
+    }
+
+    private boolean hasAnyTerm(String value, List<String> terms) {
+        return terms.stream().anyMatch(value::contains);
+    }
+
     private String normalize(String value) {
         if (!StringUtils.hasText(value)) return "";
         return Normalizer.normalize(value.trim().toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "")
-                .replace("đ", "d");
+                .replace("đ", "d")
+                .replaceAll("[^a-z0-9\\s-]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private String firstText(JsonNode node, String... keys) {
+        if (node == null || !node.isObject()) return null;
+        for (String key : keys) {
+            JsonNode value = node.get(key);
+            if (value == null || value.isNull()) continue;
+            if (value.isArray() && !value.isEmpty()) value = value.get(0);
+            if (value.isObject()) continue;
+            String text = value.asText();
+            if (StringUtils.hasText(text)) return text;
+        }
+        return null;
+    }
+
+    private BigDecimal firstMoney(JsonNode node, String... keys) {
+        if (node == null || !node.isObject()) return null;
+        for (String key : keys) {
+            JsonNode raw = node.get(key);
+            BigDecimal value = null;
+            if (raw != null && raw.isNumber()) {
+                value = raw.decimalValue().setScale(0, RoundingMode.HALF_UP);
+            } else {
+                value = parseMoney(firstText(node, key));
+            }
+            if (value != null) return value;
+        }
+        return null;
+    }
+
+    private String firstOwnText(Element element, String selector) {
+        Element found = element.selectFirst(selector);
+        if (found == null) return null;
+        String title = found.attr("title");
+        if (StringUtils.hasText(title)) return title;
+        return found.text();
+    }
+
+    private String firstRegex(String value, String pattern) {
+        if (!StringUtils.hasText(value)) return null;
+        Matcher matcher = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(value);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (StringUtils.hasText(value)) return value;
+        }
+        return null;
+    }
+
+    private BigDecimal parseMoney(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        String trimmed = value.trim();
+        if (trimmed.matches("(?i)^\\d+(\\.\\d+)?e\\d+$")) {
+            try {
+                return new BigDecimal(trimmed).setScale(0, RoundingMode.HALF_UP);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        String digits = value.replaceAll("[^0-9]", "");
+        if (!StringUtils.hasText(digits)) return null;
+        try {
+            BigDecimal number = new BigDecimal(digits);
+            return number.compareTo(BigDecimal.valueOf(10000)) >= 0 ? number : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private BigDecimal averagePrice(List<MarketResearchResponse.ProductItem> products) {
+        List<BigDecimal> prices = products.stream()
+                .map(MarketResearchResponse.ProductItem::getPrice)
+                .filter(item -> item != null && item.compareTo(BigDecimal.ZERO) > 0)
+                .toList();
+        if (prices.isEmpty()) return BigDecimal.ZERO;
+        BigDecimal total = prices.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        return roundMoney(total.divide(BigDecimal.valueOf(prices.size()), 0, RoundingMode.HALF_UP));
+    }
+
+    private BigDecimal roundMoney(BigDecimal value) {
+        if (value == null) return BigDecimal.ZERO;
+        return value.divide(BigDecimal.valueOf(1000), 0, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(1000));
+    }
+
+    private String cleanText(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        return value.replaceAll("\\s+", " ").trim();
+    }
+
+    private String cleanHtml(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        return cleanText(Jsoup.parse(value.replace("_quot", "\"")).text());
+    }
+
+    private String toAbsoluteUrl(String rootUrl, String value) {
+        if (!StringUtils.hasText(value)) return null;
+        String cleaned = value.trim().replace("\\/", "/");
+        if (cleaned.startsWith("//")) return "https:" + cleaned;
+        if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) return cleaned;
+        if (cleaned.startsWith("/")) return rootUrl + cleaned;
+        if (cleaned.contains(".html") || !cleaned.contains(" ")) return rootUrl + "/" + cleaned;
+        return null;
     }
 
     private static List<MarketResearchResponse.MarketCategoryOption> buildCategoryTree() {
@@ -255,112 +687,6 @@ public class MarketResearchService {
         );
     }
 
-    private static List<MarketSample> buildMarketSamples() {
-        return List.of(
-                new MarketSample(
-                        "op-lung-bao-da",
-                        "Ốp lưng & Bao da",
-                        "Ốp lưng MagSafe iPhone 15 Pro Max",
-                        86,
-                        "+12,6%",
-                        money(249000),
-                        money(272000),
-                        6,
-                        214,
-                        "Có cơ hội",
-                        "Đẩy combo cáp + củ sạc, dùng voucher theo giỏ hàng vì biên lợi nhuận phụ kiện còn tốt.",
-                        List.of(
-                                source("CellphoneS", 259000, 289000, 329000, "2.900+", "4.8", "Mua kèm giảm 10%", 94),
-                                source("FPT Shop", 279000, 309000, 349000, "1.600+", "4.7", "Bảo hành 12 tháng", 93),
-                                source("Shopee Mall", 219000, 252000, 299000, "9.800+", "4.6", "Flash voucher", 82),
-                                source("TikTok Shop", 199000, 238000, 289000, "7.400+", "4.5", "Live deal", 78),
-                                source("TopZone", 299000, 339000, 399000, "840+", "4.9", "Hàng Apple MFi", 97),
-                                source("Điện Máy Xanh", 269000, 315000, 369000, "1.200+", "4.7", "Đổi trả 30 ngày", 94)
-                        )
-                ),
-                new MarketSample(
-                        "tai-nghe-bluetooth",
-                        "Tai nghe Bluetooth",
-                        "Tai nghe bluetooth chống ồn",
-                        81,
-                        "+6,9%",
-                        money(1290000),
-                        money(1385000),
-                        5,
-                        148,
-                        "Nên chạy quảng cáo",
-                        "Chạy quảng cáo theo nhóm khách hàng học tập/làm việc, dùng review và video demo chống ồn làm điểm khác biệt.",
-                        List.of(
-                                source("Shopee Mall", 1190000, 1320000, 1490000, "5.200+", "4.7", "Voucher 12%", 86),
-                                source("TikTok Shop", 1090000, 1260000, 1450000, "4.600+", "4.6", "Live sale", 80),
-                                source("CellphoneS", 1350000, 1490000, 1690000, "1.100+", "4.8", "Bảo hành chính hãng", 95),
-                                source("FPT Shop", 1390000, 1530000, 1720000, "940+", "4.8", "Trả góp 0%", 94),
-                                source("Điện Máy Xanh", 1450000, 1580000, 1790000, "860+", "4.7", "Đổi trả nhanh", 93)
-                        )
-                ),
-                new MarketSample(
-                        "dong-ho-thong-minh",
-                        "Đồng hồ thông minh",
-                        "Apple Watch SE GPS 40mm",
-                        74,
-                        "-1,8%",
-                        money(5890000),
-                        money(6210000),
-                        5,
-                        72,
-                        "Cẩn trọng tồn kho",
-                        "Không nhập thêm quá nhiều; ưu tiên bán kèm dây đeo và bảo hành mở rộng để tăng giá trị đơn hàng.",
-                        List.of(
-                                source("TopZone", 6190000, 6490000, 6990000, "520+", "4.9", "Thu cũ đổi mới", 98),
-                                source("FPT Shop", 5990000, 6290000, 6790000, "610+", "4.8", "Voucher 300K", 96),
-                                source("CellphoneS", 5790000, 6120000, 6590000, "780+", "4.8", "Tặng dây đeo", 95),
-                                source("Shopee Mall", 5590000, 5920000, 6390000, "1.900+", "4.6", "Freeship", 85),
-                                source("TikTok Shop", 5490000, 5840000, 6290000, "1.250+", "4.5", "Deal livestream", 79)
-                        )
-                ),
-                new MarketSample(
-                        "laptop",
-                        "Máy tính xách tay",
-                        "MacBook Air M2 13 inch 256GB",
-                        78,
-                        "+3,1%",
-                        money(21990000),
-                        money(22720000),
-                        5,
-                        84,
-                        "Theo dõi",
-                        "Không cần đua giá quá mạnh; nhấn bảo hành, đổi trả và hỗ trợ kỹ thuật để giữ biên lợi nhuận.",
-                        List.of(
-                                source("TopZone", 22490000, 22990000, 23690000, "680+", "4.9", "Trả góp 0%", 98),
-                                source("FPT Shop", 22290000, 22850000, 23590000, "720+", "4.8", "Voucher 500K", 96),
-                                source("CellphoneS", 21990000, 22690000, 23390000, "940+", "4.8", "Balo + Office", 95),
-                                source("Shopee Mall", 21490000, 22190000, 22990000, "1.870+", "4.7", "Mã giảm 5%", 88),
-                                source("TikTok Shop", 21290000, 21990000, 22890000, "1.140+", "4.6", "Deal livestream", 82)
-                        )
-                ),
-                new MarketSample(
-                        "dien-thoai-thong-minh",
-                        "Điện thoại thông minh",
-                        "iPhone 15 Pro Max 256GB",
-                        92,
-                        "+8,4%",
-                        money(29290000),
-                        money(30180000),
-                        5,
-                        126,
-                        "Nên cạnh tranh",
-                        "Giữ giá thấp hơn trung bình thị trường 2-3%, ưu tiên quà tặng phụ kiện và bảo hành mở rộng.",
-                        List.of(
-                                source("TopZone", 29990000, 30990000, 31990000, "1.240+", "4.9", "Trả góp 0%", 98),
-                                source("FPT Shop", 29790000, 30590000, 31590000, "980+", "4.8", "Voucher 800K", 96),
-                                source("CellphoneS", 29490000, 30290000, 31290000, "1.560+", "4.8", "Giảm 1 triệu", 95),
-                                source("Shopee Mall", 28890000, 29820000, 30990000, "3.800+", "4.7", "Freeship + voucher", 89),
-                                source("TikTok Shop", 28690000, 29650000, 30690000, "2.100+", "4.6", "Flash sale", 84)
-                        )
-                )
-        );
-    }
-
     private static MarketResearchResponse.MarketCategoryOption option(String id, String name) {
         return option(id, name, true, List.of());
     }
@@ -379,63 +705,6 @@ public class MarketResearchService {
                 .build();
     }
 
-    private static MarketResearchResponse.PriceSource source(
-            String source,
-            long min,
-            long avg,
-            long max,
-            String sales,
-            String rating,
-            String promo,
-            Integer trust
-    ) {
-        return source(source, money(min), money(avg), money(max), sales, rating, promo, trust);
-    }
-
-    private static MarketResearchResponse.PriceSource source(
-            String source,
-            BigDecimal min,
-            BigDecimal avg,
-            BigDecimal max,
-            String sales,
-            String rating,
-            String promo,
-            Integer trust
-    ) {
-        return MarketResearchResponse.PriceSource.builder()
-                .source(source)
-                .min(min)
-                .avg(avg)
-                .max(max)
-                .sales(sales)
-                .rating(new BigDecimal(rating))
-                .promo(promo)
-                .trust(trust)
-                .build();
-    }
-
-    private static BigDecimal money(long value) {
-        return BigDecimal.valueOf(value);
-    }
-
-    private static BigDecimal roundMoney(BigDecimal value) {
-        return value.divide(BigDecimal.valueOf(10000), 0, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(10000));
-    }
-
-    private record MarketSample(
-            String id,
-            String name,
-            String keyword,
-            Integer demand,
-            String trend,
-            BigDecimal recommendedPrice,
-            BigDecimal marketAverage,
-            Integer competitorCount,
-            Integer sampleCount,
-            String status,
-            String strategy,
-            List<MarketResearchResponse.PriceSource> sources
-    ) {
+    private record SourceTarget(String name, String searchUrl, String rootUrl, int trust) {
     }
 }

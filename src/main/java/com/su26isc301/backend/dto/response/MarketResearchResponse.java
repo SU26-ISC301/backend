@@ -39,6 +39,8 @@ public class MarketResearchResponse {
     public static class MarketCategoryInsight {
         private String id;
         private String name;
+        private String parentCategoryId;
+        private String parentCategoryName;
         private String keyword;
         private Integer demand;
         private String trend;
@@ -78,5 +80,25 @@ public class MarketResearchResponse {
         private BigDecimal rating;
         private String promo;
         private Integer trust;
+        private String status;
+        private String message;
+        private String url;
+        private Integer productCount;
+        private List<ProductItem> products;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ProductItem {
+        private String name;
+        private BigDecimal price;
+        private BigDecimal originalPrice;
+        private String url;
+        private String imageUrl;
+        private String promo;
+        private BigDecimal rating;
+        private String availability;
     }
 }
