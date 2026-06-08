@@ -8,16 +8,19 @@ import com.su26isc301.backend.dto.request.VendorOnboardingRequest;
 import com.su26isc301.backend.dto.request.VendorRegisterRequest;
 import com.su26isc301.backend.dto.request.VendorUpdateRequest;
 import com.su26isc301.backend.dto.response.ApiResponse;
+import com.su26isc301.backend.dto.response.MarketResearchResponse;
 import com.su26isc301.backend.dto.response.VendorOtpVerifyResponse;
 import com.su26isc301.backend.entity.Profile;
 import com.su26isc301.backend.entity.Vendor;
 import com.su26isc301.backend.enums.VendorCategory;
+import com.su26isc301.backend.service.MarketResearchService;
 import com.su26isc301.backend.service.OtpService;
 import com.su26isc301.backend.service.VendorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -32,6 +35,7 @@ public class VendorController {
 
     private final VendorService vendorService;
     private final OtpService otpService;
+    private final MarketResearchService marketResearchService;
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<?>> loginVendor(@RequestBody LoginRequest request) {
@@ -183,6 +187,18 @@ public class VendorController {
                 .data(vendors)
                 .build();
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/market-research")
+    public ResponseEntity<ApiResponse<MarketResearchResponse>> getVendorMarketResearch(
+            Authentication authentication,
+            @RequestParam(value = "categoryId", required = false) String categoryId,
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "query", required = false) String query
+    ) {
+        String email = authentication == null ? null : String.valueOf(authentication.getPrincipal());
+        MarketResearchResponse response = marketResearchService.getVendorMarketResearch(email, categoryId, source, query);
+        return ResponseEntity.ok(ApiResponse.success("Lấy dữ liệu nghiên cứu thị trường thành công", response));
     }
 
     private String normalizeEmail(String email) {
