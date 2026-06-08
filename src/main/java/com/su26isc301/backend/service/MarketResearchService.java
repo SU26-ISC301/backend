@@ -54,11 +54,15 @@ public class MarketResearchService {
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/125.0 Safari/537.36";
     private static final List<MarketResearchResponse.MarketCategoryOption> CATEGORY_TREE = buildCategoryTree();
+    private static final String CELLPHONES_GRAPHQL_URL =
+            "https://api.cellphones.com.vn/graphql-search/v2/graphql/query";
+    private static final String CDN_CELLPHONES = "https://cdn2.cellphones.com.vn/358x,webp,q100/media/catalog/product";
     private static final List<SourceTarget> SOURCE_TARGETS = List.of(
-            new SourceTarget("CellPhoneS", "https://cellphones.com.vn/catalogsearch/result?q=%s", "https://cellphones.com.vn", 94),
-            new SourceTarget("FPT Shop", "https://fptshop.com.vn/tim-kiem?s=%s", "https://fptshop.com.vn", 95),
-            new SourceTarget("Điện Máy Xanh", "https://www.dienmayxanh.com/tim-kiem?key=%s", "https://www.dienmayxanh.com", 94),
-            new SourceTarget("Di Động Việt", "https://didongviet.vn/search/?q=%s", "https://didongviet.vn", 93)
+            new SourceTarget("CellPhoneS", "https://cellphones.com.vn/catalogsearch/result?q=%s", "https://cellphones.com.vn", 94, "GRAPHQL"),
+            new SourceTarget("FPT Shop", "https://fptshop.com.vn/tim-kiem?s=%s", "https://fptshop.com.vn", 95, "HTML"),
+            new SourceTarget("Điện Máy Xanh", "https://www.dienmayxanh.com/tim-kiem?key=%s", "https://www.dienmayxanh.com", 94, "HTML"),
+            new SourceTarget("Di Động Việt", "https://didongviet.vn/search/?q=%s", "https://didongviet.vn", 93, "HTML"),
+            new SourceTarget("TopZone", "https://topzone.vn/tim-kiem?s=%s", "https://www.topzone.vn", 93, "TGDD_DOM")
     );
 
     private final ProfileRepository profileRepository;
@@ -151,7 +155,7 @@ public class MarketResearchService {
                 .status(products.isEmpty() ? "Chưa có dữ liệu" : "Có dữ liệu thật")
                 .strategy(products.isEmpty()
                         ? "Chưa lấy được dữ liệu public cho từ khóa này. Hãy thử từ khóa cụ thể hơn hoặc cập nhật lại sau."
-                        : "Giá đề xuất được tính từ dữ liệu public vừa lấy trên 4 shop. Nên đối chiếu lại trước khi nhập hàng hoặc chạy khuyến mãi.")
+                        : "Giá đề xuất được tính từ dữ liệu public vừa lấy trên 5 shop. Nên đối chiếu lại trước khi nhập hàng hoặc chạy khuyến mãi.")
                 .categoryPath(findCategoryPath(List.of(parent), categoryId).stream()
                         .map(MarketResearchResponse.MarketCategoryOption::getName)
                         .toList())
@@ -173,17 +177,127 @@ public class MarketResearchService {
     private MarketResearchResponse.PriceSource scrapeSource(SourceTarget target, String query) {
         String url = target.searchUrl().formatted(URLEncoder.encode(query, StandardCharsets.UTF_8));
         try {
+            if ("GRAPHQL".equals(target.scrapeMode())) {
+                return scrapeCellPhonesS(target, query);
+            }
             Document document = Jsoup.connect(url)
                     .userAgent(USER_AGENT)
                     .referrer(target.rootUrl())
                     .timeout(15000)
                     .followRedirects(true)
                     .get();
-            List<MarketResearchResponse.ProductItem> products = extractProducts(document, target, query);
+            List<MarketResearchResponse.ProductItem> products;
+            if ("TGDD_DOM".equals(target.scrapeMode())) {
+                products = extractProductsFromTgddDom(document, target, query);
+            } else {
+                products = extractProducts(document, target, query);
+            }
             return buildPriceSource(target, url, products, null);
         } catch (Exception ex) {
             return unavailableSource(target, url, "Chưa lấy được dữ liệu public từ nguồn này, sẽ cập nhật sau.");
         }
+    }
+
+    /**
+     * Scrapes CellPhoneS using their internal GraphQL search API.
+     * The search page uses Nuxt.js client-side rendering so products are NOT available
+     * in the SSR HTML. The API endpoint was discovered from their JS bundle.
+     * Province 1 = Hà Nội (returns national results when no specific province stock).
+     */
+    private MarketResearchResponse.PriceSource scrapeCellPhonesS(SourceTarget target, String query) {
+        String searchUrl = target.searchUrl().formatted(URLEncoder.encode(query, StandardCharsets.UTF_8));
+        try {
+            String graphqlQuery = String.format(
+                    "{\"query\":\"query advanced_search { advanced_search(user_query: { terms: \\\"%s\\\", province: 1 } page: 1) { products { product_id name sku url_path price special_price thumbnail } } }\",\"variables\":{}}",
+                    query.replace("\"", "\\\"")
+            );
+            String responseBody = Jsoup.connect(CELLPHONES_GRAPHQL_URL)
+                    .userAgent(USER_AGENT)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .header("Origin", "https://cellphones.com.vn")
+                    .header("Referer", "https://cellphones.com.vn/")
+                    .header("X-Client-Type", "web")
+                    .requestBody(graphqlQuery)
+                    .ignoreContentType(true)
+                    .timeout(15000)
+                    .post()
+                    .body()
+                    .text();
+
+            JsonNode root = objectMapper.readTree(responseBody);
+            JsonNode productsNode = root.path("data").path("advanced_search").path("products");
+            List<MarketResearchResponse.ProductItem> products = new ArrayList<>();
+            if (productsNode.isArray()) {
+                for (JsonNode p : productsNode) {
+                    String name = firstText(p, "name");
+                    BigDecimal price = firstMoney(p, "special_price", "price");
+                    if (!StringUtils.hasText(name) || price == null || !productMatchesQuery(name, query)) continue;
+                    String urlPath = firstText(p, "url_path");
+                    String thumbnail = firstText(p, "thumbnail");
+                    String productUrl = urlPath != null ? target.rootUrl() + "/" + urlPath : null;
+                    String imageUrl = thumbnail != null
+                            ? (thumbnail.startsWith("http") ? thumbnail : CDN_CELLPHONES + thumbnail)
+                            : null;
+                    products.add(MarketResearchResponse.ProductItem.builder()
+                            .name(cleanText(name))
+                            .price(price)
+                            .originalPrice(firstMoney(p, "price"))
+                            .url(productUrl)
+                            .imageUrl(imageUrl)
+                            .build());
+                    if (products.size() >= MAX_PRODUCTS_PER_SOURCE) break;
+                }
+            }
+            return buildPriceSource(target, searchUrl, products, null);
+        } catch (Exception ex) {
+            return unavailableSource(target, searchUrl, "Chưa lấy được dữ liệu từ CellPhoneS, sẽ cập nhật sau.");
+        }
+    }
+
+    /**
+     * Extracts products from TopZone / TGDD-family sites using the
+     * data-name and data-price HTML attributes embedded directly on anchor tags.
+     * These sites use server-side rendering with data attributes for analytics/tracking
+     * that also contain product data we can scrape directly.
+     */
+    private List<MarketResearchResponse.ProductItem> extractProductsFromTgddDom(
+            Document document,
+            SourceTarget target,
+            String query
+    ) {
+        List<MarketResearchResponse.ProductItem> products = new ArrayList<>();
+        // Select anchor tags that carry data-name and data-price attributes
+        // Exclude flash sale items (those carry utm_flashsale in href)
+        Elements cards = document.select("a[data-name][data-price]");
+        for (Element card : cards) {
+            String href = card.attr("href");
+            // Skip flash sale items — they appear in a separate section and may skew prices
+            if (href.contains("utm_flashsale")) continue;
+            String name = card.attr("data-name");
+            String priceAttr = card.attr("data-price").trim();
+            // data-price may be a decimal like "36990000.0" - parse as BigDecimal and round to int
+            BigDecimal price = null;
+            try {
+                if (StringUtils.hasText(priceAttr)) {
+                    price = new java.math.BigDecimal(priceAttr).setScale(0, java.math.RoundingMode.HALF_UP);
+                    if (price.compareTo(BigDecimal.valueOf(10000)) < 0) price = null;
+                }
+            } catch (NumberFormatException ignored) {
+                price = parseMoney(priceAttr.replace(",", "."));
+            }
+            if (!StringUtils.hasText(name) || price == null || !productMatchesQuery(name, query)) continue;
+            Element img = card.selectFirst("img[data-src], img[src]");
+            String imageUrl = img != null ? firstNonBlank(img.attr("data-src"), img.attr("src")) : null;
+            products.add(MarketResearchResponse.ProductItem.builder()
+                    .name(cleanText(name))
+                    .price(price)
+                    .url(toAbsoluteUrl(target.rootUrl(), href))
+                    .imageUrl(toAbsoluteUrl(target.rootUrl(), imageUrl))
+                    .build());
+            if (products.size() >= MAX_PRODUCTS_PER_SOURCE) break;
+        }
+        return products;
     }
 
     private List<MarketResearchResponse.ProductItem> extractProducts(
@@ -705,6 +819,6 @@ public class MarketResearchService {
                 .build();
     }
 
-    private record SourceTarget(String name, String searchUrl, String rootUrl, int trust) {
+    private record SourceTarget(String name, String searchUrl, String rootUrl, int trust, String scrapeMode) {
     }
 }
