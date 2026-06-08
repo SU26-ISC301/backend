@@ -103,9 +103,10 @@ public class SupabaseStorageService {
     /**
      * Lấy danh sách thông tin các file trong bucket (dùng để so sánh dọn rác)
      * @param bucketName Tên bucket
+     * @param prefix Tiền tố thư mục (VD: "images" hoặc "videos")
      * @return Danh sách maps chứa thông tin file (name, created_at, v.v.)
      */
-    public List<Map<String, Object>> listFiles(String bucketName) {
+    public List<Map<String, Object>> listFiles(String bucketName, String prefix) {
         String url = String.format("%s/storage/v1/object/list/%s", supabaseUrl, bucketName);
 
         HttpHeaders headers = new HttpHeaders();
@@ -116,6 +117,7 @@ public class SupabaseStorageService {
         Map<String, Object> body = new HashMap<>();
         body.put("limit", 1000);
         body.put("offset", 0);
+        body.put("prefix", prefix != null ? prefix : "");
         body.put("sortBy", Map.of("column", "name", "order", "asc"));
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
