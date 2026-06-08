@@ -49,8 +49,20 @@ public class ProductMediaCleanupJob {
                 }
             }
 
-            // 2. Lấy danh sách tất cả file đang có trên bucket 'product-media'
-            List<Map<String, Object>> storageFiles = supabaseStorageService.listFiles("product-media");
+            // 2. Lấy danh sách tất cả file từ 2 thư mục 'images' và 'videos'
+            List<Map<String, Object>> storageFiles = new java.util.ArrayList<>();
+            
+            List<Map<String, Object>> imageFiles = supabaseStorageService.listFiles("product-media", "images");
+            for(Map<String, Object> f : imageFiles) {
+                f.put("fullPath", "images/" + f.get("name"));
+                storageFiles.add(f);
+            }
+            
+            List<Map<String, Object>> videoFiles = supabaseStorageService.listFiles("product-media", "videos");
+            for(Map<String, Object> f : videoFiles) {
+                f.put("fullPath", "videos/" + f.get("name"));
+                storageFiles.add(f);
+            }
 
             int deletedCount = 0;
             // Chỉ xóa các file tải lên cách đây hơn 24 giờ (tránh xóa nhầm file người dùng đang tạo dở)
@@ -59,6 +71,7 @@ public class ProductMediaCleanupJob {
             // 3. So sánh và xóa
             for (Map<String, Object> fileObj : storageFiles) {
                 String fileName = (String) fileObj.get("name");
+                String fullPath = (String) fileObj.get("fullPath");
                 String createdAtStr = (String) fileObj.get("created_at");
                 
                 // Bỏ qua nếu là thư mục rỗng
@@ -66,18 +79,18 @@ public class ProductMediaCleanupJob {
                     continue;
                 }
 
-                boolean isUsed = usedFileNames.contains(fileName);
+                boolean isUsed = usedFileNames.contains(fullPath);
 
                 if (!isUsed && createdAtStr != null) {
                     Instant createdAt = Instant.parse(createdAtStr);
                     if (createdAt.isBefore(threshold)) {
                         // Tái tạo lại Public URL để truyền vào hàm delete
-                        String publicUrlToDelete = String.format("%s/storage/v1/object/public/product-media/%s", supabaseUrl, fileName);
+                        String publicUrlToDelete = String.format("%s/storage/v1/object/public/product-media/%s", supabaseUrl, fullPath);
                         
                         // Xóa file
                         supabaseStorageService.deleteFile(publicUrlToDelete, "product-media");
                         deletedCount++;
-                        log.info(" Đã xóa file rác: {}", fileName);
+                        log.info(" Đã xóa file rác: {}", fullPath);
                     }
                 }
             }

@@ -76,7 +76,11 @@ public class ProductController {
         try {
             for (MultipartFile file : files) {
                 if (file != null && !file.isEmpty()) {
-                    String url = supabaseStorageService.uploadFile(file, "product-media");
+                    String contentType = file.getContentType();
+                    String folder = (contentType != null && contentType.startsWith("video/")) ? "videos" : "images";
+                    String targetPath = "product-media/" + folder;
+                    
+                    String url = supabaseStorageService.uploadFile(file, targetPath);
                     uploadedUrls.add(url);
                 }
             }
