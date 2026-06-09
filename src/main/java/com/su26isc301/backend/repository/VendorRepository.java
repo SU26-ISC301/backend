@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface VendorRepository extends JpaRepository<Vendor, Long> {
     Optional<Vendor> findByProfile(Profile profile);
     Optional<Vendor> findByProfileId(UUID profileId);
+    Optional<Vendor> findByProfileEmail(String email);
 }
