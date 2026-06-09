@@ -62,7 +62,7 @@ public class MarketResearchService {
             new SourceTarget("FPT Shop", "https://fptshop.com.vn/tim-kiem?s=%s", "https://fptshop.com.vn", 95, "HTML"),
             new SourceTarget("Điện Máy Xanh", "https://www.dienmayxanh.com/tim-kiem?key=%s", "https://www.dienmayxanh.com", 94, "HTML"),
             new SourceTarget("Di Động Việt", "https://didongviet.vn/search/?q=%s", "https://didongviet.vn", 93, "HTML"),
-            new SourceTarget("TopZone", "https://topzone.vn/tim-kiem?s=%s", "https://www.topzone.vn", 93, "TGDD_DOM")
+            new SourceTarget("TopZone", "https://www.topzone.vn/tim-kiem?key=%s", "https://www.topzone.vn", 93, "TGDD_DOM")
     );
 
     private final ProfileRepository profileRepository;
@@ -267,13 +267,9 @@ public class MarketResearchService {
             String query
     ) {
         List<MarketResearchResponse.ProductItem> products = new ArrayList<>();
-        // Select anchor tags that carry data-name and data-price attributes
-        // Exclude flash sale items (those carry utm_flashsale in href)
         Elements cards = document.select("a[data-name][data-price]");
         for (Element card : cards) {
             String href = card.attr("href");
-            // Skip flash sale items — they appear in a separate section and may skew prices
-            if (href.contains("utm_flashsale")) continue;
             String name = card.attr("data-name");
             String priceAttr = card.attr("data-price").trim();
             // data-price may be a decimal like "36990000.0" - parse as BigDecimal and round to int
@@ -287,13 +283,12 @@ public class MarketResearchService {
                 price = parseMoney(priceAttr.replace(",", "."));
             }
             if (!StringUtils.hasText(name) || price == null || !productMatchesQuery(name, query)) continue;
-            Element img = card.selectFirst("img[data-src], img[src]");
-            String imageUrl = img != null ? firstNonBlank(img.attr("data-src"), img.attr("src")) : null;
+            String imageUrl = firstImageUrl(card);
             products.add(MarketResearchResponse.ProductItem.builder()
                     .name(cleanText(name))
                     .price(price)
                     .url(toAbsoluteUrl(target.rootUrl(), href))
-                    .imageUrl(toAbsoluteUrl(target.rootUrl(), imageUrl))
+                    .imageUrl(toSourceImageUrl(target, imageUrl))
                     .build());
             if (products.size() >= MAX_PRODUCTS_PER_SOURCE) break;
         }
@@ -306,12 +301,36 @@ public class MarketResearchService {
             String query
     ) {
         Map<String, MarketResearchResponse.ProductItem> products = new LinkedHashMap<>();
+        Map<String, String> imageUrlsByName = extractImageUrlsByName(document, target, query);
         addProducts(products, extractProductsFromJson(document, target, query));
         addProducts(products, extractProductsFromDom(document, target, query));
         addProducts(products, extractProductsFromText(document.html(), target, query));
         return products.values().stream()
+                .peek(item -> {
+                    if (!StringUtils.hasText(item.getImageUrl())) {
+                        item.setImageUrl(imageUrlsByName.get(normalize(item.getName())));
+                    }
+                })
                 .limit(MAX_PRODUCTS_PER_SOURCE)
                 .toList();
+    }
+
+    private Map<String, String> extractImageUrlsByName(
+            Document document,
+            SourceTarget target,
+            String query
+    ) {
+        Map<String, String> images = new LinkedHashMap<>();
+        Elements cards = document.select("a[aria-label][href]:has(img), a[data-name][href]:has(img)");
+        for (Element card : cards) {
+            String name = firstNonBlank(card.attr("aria-label"), card.attr("data-name"), card.attr("title"), card.text());
+            if (!StringUtils.hasText(name) || !productMatchesQuery(name, query)) continue;
+            String imageUrl = toSourceImageUrl(target, firstImageUrl(card));
+            if (StringUtils.hasText(imageUrl)) {
+                images.putIfAbsent(normalize(name), imageUrl);
+            }
+        }
+        return images;
     }
 
     private List<MarketResearchResponse.ProductItem> extractProductsFromJson(
@@ -360,7 +379,7 @@ public class MarketResearchService {
                         .price(price)
                         .originalPrice(firstMoney(node, "originalPrice", "list_price", "oldPrice"))
                         .url(toAbsoluteUrl(target.rootUrl(), slug))
-                        .imageUrl(toAbsoluteUrl(target.rootUrl(), image))
+                        .imageUrl(toSourceImageUrl(target, image))
                         .promo(cleanHtml(firstText(node, "promotion_info", "promo", "description")))
                         .rating(firstMoney(node, "avg_point", "rating", "avgRating"))
                         .availability(firstText(node, "status", "product_status", "availability"))
@@ -379,20 +398,19 @@ public class MarketResearchService {
             String query
     ) {
         List<MarketResearchResponse.ProductItem> products = new ArrayList<>();
-        Elements cards = document.select(".listproduct .item, li.item, .product-item, .product-card, [class*=ProductCard], [class*=product-card]");
+        Elements cards = document.select(".listproduct .item, li.item, .product-item, .product-card, [class*=ProductCard], [class*=product-card], div:has(> div.cardInfo):has(a[aria-label][href])");
         for (Element card : cards) {
-            String name = firstOwnText(card, ".product-title, h3, h2, [class*=name], [class*=Name], a[title]");
-            BigDecimal price = parseMoney(firstOwnText(card, ".price, [class*=price], [class*=Price]"));
+            String name = firstOwnText(card, ".cardInfo h3, .cardInfo a[title], .product-title, h3, h2, [class*=name], [class*=Name], a[aria-label], a[title]");
+            BigDecimal price = firstMoneyText(card, ".price, [class*=price], [class*=Price], .cardInfo .b1-semibold");
             if (!StringUtils.hasText(name) || price == null || !productMatchesQuery(name, query)) {
                 continue;
             }
             Element link = card.selectFirst("a[href]");
-            Element image = card.selectFirst("img[src], img[data-src]");
             products.add(MarketResearchResponse.ProductItem.builder()
                     .name(cleanText(name))
                     .price(price)
                     .url(toAbsoluteUrl(target.rootUrl(), link == null ? null : link.attr("href")))
-                    .imageUrl(toAbsoluteUrl(target.rootUrl(), image == null ? null : firstNonBlank(image.attr("src"), image.attr("data-src"))))
+                    .imageUrl(toSourceImageUrl(target, firstImageUrl(card)))
                     .promo(cleanText(firstOwnText(card, ".item-gift, [class*=promo], [class*=Promotion]")))
                     .rating(parseMoney(firstOwnText(card, ".vote-txt, [class*=rating], [class*=Rating]")))
                     .availability(StringUtils.hasText(firstOwnText(card, ".item-txt-online")) ? firstOwnText(card, ".item-txt-online") : null)
@@ -430,7 +448,7 @@ public class MarketResearchService {
                     .name(name)
                     .price(price)
                     .url(toAbsoluteUrl(target.rootUrl(), slug))
-                    .imageUrl(toAbsoluteUrl(target.rootUrl(), image))
+                    .imageUrl(toSourceImageUrl(target, image))
                     .promo(cleanHtml(promo))
                     .build());
         }
@@ -441,7 +459,10 @@ public class MarketResearchService {
         for (MarketResearchResponse.ProductItem item : items) {
             if (!StringUtils.hasText(item.getName()) || item.getPrice() == null) continue;
             String key = normalize(item.getName()) + "-" + item.getPrice();
-            target.putIfAbsent(key, item);
+            MarketResearchResponse.ProductItem existing = target.get(key);
+            if (existing == null || (!StringUtils.hasText(existing.getImageUrl()) && StringUtils.hasText(item.getImageUrl()))) {
+                target.put(key, item);
+            }
         }
     }
 
@@ -664,9 +685,20 @@ public class MarketResearchService {
     private String firstOwnText(Element element, String selector) {
         Element found = element.selectFirst(selector);
         if (found == null) return null;
+        String ariaLabel = found.attr("aria-label");
+        if (StringUtils.hasText(ariaLabel)) return ariaLabel;
         String title = found.attr("title");
         if (StringUtils.hasText(title)) return title;
         return found.text();
+    }
+
+    private BigDecimal firstMoneyText(Element element, String selector) {
+        Elements matches = element.select(selector);
+        for (Element match : matches) {
+            BigDecimal money = parseMoney(match.text());
+            if (money != null) return money;
+        }
+        return null;
     }
 
     private String firstRegex(String value, String pattern) {
@@ -680,6 +712,28 @@ public class MarketResearchService {
             if (StringUtils.hasText(value)) return value;
         }
         return null;
+    }
+
+    private String firstImageUrl(Element element) {
+        for (Element image : element.select("img")) {
+            String value = firstNonBlank(
+                    image.attr("data-src"),
+                    image.attr("src"),
+                    firstSrcsetUrl(image.attr("srcset")),
+                    firstSrcsetUrl(image.attr("srcSet")),
+                    firstSrcsetUrl(image.attr("data-srcset")),
+                    image.attr("data-original")
+            );
+            if (StringUtils.hasText(value)) return value;
+        }
+        return null;
+    }
+
+    private String firstSrcsetUrl(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        String first = value.split(",")[0].trim();
+        int spaceIndex = first.indexOf(' ');
+        return spaceIndex > 0 ? first.substring(0, spaceIndex).trim() : first;
     }
 
     private BigDecimal parseMoney(String value) {
@@ -736,6 +790,15 @@ public class MarketResearchService {
         if (cleaned.startsWith("/")) return rootUrl + cleaned;
         if (cleaned.contains(".html") || !cleaned.contains(" ")) return rootUrl + "/" + cleaned;
         return null;
+    }
+
+    private String toSourceImageUrl(SourceTarget target, String value) {
+        if (!StringUtils.hasText(value)) return null;
+        String cleaned = value.trim().replace("\\/", "/");
+        if ("Di Động Việt".equals(target.name()) && cleaned.startsWith("files/")) {
+            return "https://cdn-v2.didongviet.vn/" + cleaned;
+        }
+        return toAbsoluteUrl(target.rootUrl(), cleaned);
     }
 
     private static List<MarketResearchResponse.MarketCategoryOption> buildCategoryTree() {
