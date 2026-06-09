@@ -72,7 +72,6 @@ public class PayOSService {
             body.put("returnUrl", returnUrl);
             body.put("cancelUrl", cancelUrl);
             body.put("signature", signature);
-            body.put("extraData", "vendorId=" + vendorId + "&planType=" + planType);
 
             // Bước 3: Gọi API PayOS
             HttpHeaders headers = new HttpHeaders();
