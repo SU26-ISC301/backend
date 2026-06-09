@@ -11,6 +11,7 @@ import com.su26isc301.backend.enums.Roles;
 import com.su26isc301.backend.enums.VendorCategory;
 import com.su26isc301.backend.repository.ProfileRepository;
 import com.su26isc301.backend.repository.VendorRepository;
+import com.su26isc301.backend.service.SubscriptionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -35,6 +36,7 @@ public class VendorService {
 
     private final VendorRepository vendorRepository;
     private final ProfileRepository profileRepository;
+    private final SubscriptionService subscriptionService;
 
     @Value("${supabase.url}")
     private String supabaseUrl;
@@ -68,7 +70,9 @@ public class VendorService {
                 .faceImageUrl(request.getFaceImageUrl())
                 .build();
 
-        return vendorRepository.save(vendor);
+        Vendor saved = vendorRepository.save(vendor);
+        subscriptionService.getOrCreateFreePlan(saved.getId());
+        return saved;
     }
 
     @Transactional
@@ -108,7 +112,9 @@ public class VendorService {
                 .taxCode(blankToNull(request.getTaxCode()))
                 .build();
 
-        return vendorRepository.save(vendor);
+        Vendor saved = vendorRepository.save(vendor);
+        subscriptionService.getOrCreateFreePlan(saved.getId());
+        return saved;
     }
 
     @Transactional

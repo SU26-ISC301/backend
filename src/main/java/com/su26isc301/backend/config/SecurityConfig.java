@@ -51,6 +51,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/vendors/register/complete").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/identity/cccd/verify").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/identity/cccd/verify-with-face").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/subscription/webhook/payos").permitAll()
                         .requestMatchers("/api/admin/**").hasAuthority(Roles.admin.name())
                         .requestMatchers(
                                 "/api/auth/**",
