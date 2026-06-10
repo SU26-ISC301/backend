@@ -2,6 +2,7 @@ package com.su26isc301.backend.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import com.su26isc301.backend.converter.CccdEncryptionConverter;
 
 import java.math.BigDecimal;
 import java.time.ZonedDateTime;
@@ -53,9 +54,11 @@ public class Vendor {
     @Column(name = "created_at", updatable = false)
     private ZonedDateTime createdAt;
 
+    @Convert(converter = CccdEncryptionConverter.class)
     @Column(name = "cccd")
     private String cccd;
 
+    @Convert(converter = CccdEncryptionConverter.class)
     @Column(name = "tax_code")
     private String taxCode;
 
