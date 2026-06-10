@@ -53,16 +53,21 @@ public class VendorController {
     public ResponseEntity<ApiResponse<Map<String, String>>> startVendorRegister(
             @RequestBody VendorEmailOtpRequest request
     ) {
-        String email = normalizeEmail(request.getEmail());
-        if (email == null) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("Email là bắt buộc"));
-        }
+        try {
+            String email = normalizeEmail(request.getEmail());
+            if (email == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("Email là bắt buộc"));
+            }
 
-        otpService.generateAndSendOtp(email);
-        return ResponseEntity.ok(ApiResponse.success(
-                "Vui lòng kiểm tra email để lấy mã OTP xác nhận.",
-                Map.of("email", email)
-        ));
+            otpService.checkAndIncrementOtpRateLimit(email);
+            otpService.generateAndSendOtp(email);
+            return ResponseEntity.ok(ApiResponse.success(
+                    "Vui lòng kiểm tra email để lấy mã OTP xác nhận.",
+                    Map.of("email", email)
+            ));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
     }
 
     @PostMapping("/register/verify-otp")

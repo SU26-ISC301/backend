@@ -83,8 +83,11 @@ public class AuthController {
         if (phone != null && profileRepository.findByPhone(phone).isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Số điện thoại đã được sử dụng"));
         }
+        otpService.checkAndIncrementOtpRateLimit(email);
         otpService.generateAndSendOtp(request);
         return ResponseEntity.ok(Map.of("message", "Vui lòng kiểm tra email để lấy mã OTP xác nhận."));
+    } catch (RuntimeException e) {
+        return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
     } catch (Exception e) {
         return ResponseEntity.internalServerError().body(Map.of("error", "Lỗi khi gửi mail: " + e.getMessage()));
     }
@@ -215,6 +218,7 @@ public class AuthController {
             profileRepository.findByEmail(email)
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản với email này"));
 
+            otpService.checkAndIncrementOtpRateLimit(email);
             otpService.generateAndSendOtp(email);
             return ResponseEntity.ok(ApiResponse.success("Vui lòng kiểm tra email để lấy mã OTP đặt lại mật khẩu.", Map.of("email", email)));
         } catch (RuntimeException e) {
@@ -328,6 +332,7 @@ public class AuthController {
             }
 
             String otpTarget = emailChanged ? nextEmail : profile.getEmail();
+            otpService.checkAndIncrementOtpRateLimit(otpTarget);
             otpService.generateAndSendOtp(otpTarget);
 
             return ResponseEntity.ok(ApiResponse.success(
@@ -536,28 +541,53 @@ public class AuthController {
             }
             Profile profile = profileRepository.findByEmail(loginEmail)
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản"));
+
+            if (profile.getLockoutUntil() != null && profile.getLockoutUntil().isAfter(ZonedDateTime.now())) {
+                long minutesLeft = java.time.Duration.between(ZonedDateTime.now(), profile.getLockoutUntil()).toMinutes() + 1;
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", String.format("Tài khoản đang bị tạm khóa. Vui lòng thử lại sau %d phút.", minutesLeft)));
+            }
+
             if (Boolean.FALSE.equals(profile.getIsActive())) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("error", "Tài khoản chưa xác thực OTP email"));
             }
 
-            RestTemplate restTemplate = new RestTemplate();
-            String url = supabaseUrl + "/auth/v1/token?grant_type=password";
+            Map<String, Object> responseBody;
+            try {
+                RestTemplate restTemplate = new RestTemplate();
+                String url = supabaseUrl + "/auth/v1/token?grant_type=password";
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("apikey", supabaseAnonKey);
-            headers.setContentType(MediaType.APPLICATION_JSON);
+                HttpHeaders headers = new HttpHeaders();
+                headers.set("apikey", supabaseAnonKey);
+                headers.setContentType(MediaType.APPLICATION_JSON);
 
-            Map<String, String> body = Map.of(
-                    "email", loginEmail,
-                    "password", request.getPassword()
-            );
-            HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
+                Map<String, String> body = Map.of(
+                        "email", loginEmail,
+                        "password", request.getPassword()
+                );
+                HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
 
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
-            Map<String, Object> responseBody = response.getBody();
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
+                responseBody = response.getBody();
+            } catch (HttpClientErrorException e) {
+                profile.setFailedLoginAttempts(profile.getFailedLoginAttempts() + 1);
+                if (profile.getFailedLoginAttempts() >= 5) {
+                    profile.setLockoutUntil(ZonedDateTime.now().plusMinutes(15));
+                    profileRepository.save(profile);
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("error", "Tài khoản đã bị tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần."));
+                }
+                profileRepository.save(profile);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Tài khoản hoặc mật khẩu không đúng"));
+            }
 
-            // Cập nhật thời điểm đăng nhập cuối cùng
+            // Reset failed login attempts on success
+            if (profile.getFailedLoginAttempts() > 0 || profile.getLockoutUntil() != null) {
+                profile.setFailedLoginAttempts(0);
+                profile.setLockoutUntil(null);
+            }
             profile.setLastLoginAt(ZonedDateTime.now());
             profileRepository.save(profile);
 
@@ -567,9 +597,6 @@ public class AuthController {
                     Long.valueOf(responseBody.get("expires_in").toString())
             ));
 
-        } catch (HttpClientErrorException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Tài khoản hoặc mật khẩu không đúng"));
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
