@@ -305,7 +305,7 @@ public class OtpService {
                           <p style="font-size:15px;color:#374151;">Xin chào <strong>%s</strong>,</p>
                           <p style="font-size:15px;color:#374151;">Gói <strong>%s</strong> của bạn đã được kích hoạt thành công.</p>
                           <div style="background:%s;border:1px solid %s;border-radius:8px;padding:16px;margin:20px 0;">
-                            <table style="width:100%;font-size:14px;color:#374151;">
+                            <table style="width:100%%;font-size:14px;color:#374151;">
                               <tr><td style="padding:4px 0;">📦 Gói đăng ký:</td><td style="text-align:right;font-weight:bold;">%s</td></tr>
                               <tr><td style="padding:4px 0;">💰 Số tiền:</td><td style="text-align:right;font-weight:bold;">%,d VNĐ</td></tr>
                               <tr><td style="padding:4px 0;">⏰ Hiệu lực:</td><td style="text-align:right;font-weight:bold;">%d ngày</td></tr>
