@@ -31,4 +31,11 @@ public class ProfileService {
     public List<Profile> getAllProfiles() {
         return profileRepository.findAll();
     }
+
+    public Profile toggleProfileStatus(UUID profileId) {
+        Profile profile = profileRepository.findById(profileId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy người dùng với ID: " + profileId));
+        profile.setIsActive(Boolean.FALSE.equals(profile.getIsActive()) ? Boolean.TRUE : Boolean.FALSE);
+        return profileRepository.save(profile);
+    }
 }
