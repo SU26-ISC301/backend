@@ -542,8 +542,11 @@ public class AuthController {
             Profile profile = profileRepository.findByEmail(loginEmail)
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản"));
 
-            if (profile.getLockoutUntil() != null && profile.getLockoutUntil().isAfter(ZonedDateTime.now())) {
-                long minutesLeft = java.time.Duration.between(ZonedDateTime.now(), profile.getLockoutUntil()).toMinutes() + 1;
+            java.time.ZoneId zoneVn = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+            ZonedDateTime nowVn = ZonedDateTime.now(zoneVn);
+
+            if (profile.getLockoutUntil() != null && profile.getLockoutUntil().isAfter(nowVn)) {
+                long minutesLeft = java.time.Duration.between(nowVn, profile.getLockoutUntil()).toMinutes() + 1;
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("error", String.format("Tài khoản đang bị tạm khóa. Vui lòng thử lại sau %d phút.", minutesLeft)));
             }
@@ -573,10 +576,16 @@ public class AuthController {
             } catch (HttpClientErrorException e) {
                 profile.setFailedLoginAttempts(profile.getFailedLoginAttempts() + 1);
                 if (profile.getFailedLoginAttempts() >= 5) {
-                    profile.setLockoutUntil(ZonedDateTime.now().plusMinutes(15));
+                    int lockoutMinutes = calculateLockoutMinutes(profile.getFailedLoginAttempts());
+                    profile.setLockoutUntil(ZonedDateTime.now(zoneVn).plusMinutes(lockoutMinutes));
                     profileRepository.save(profile);
+                    
+                    String hoursText = lockoutMinutes >= 60 ? (lockoutMinutes / 60) + " giờ" : "";
+                    String minsText = (lockoutMinutes % 60) > 0 ? (lockoutMinutes % 60) + " phút" : "";
+                    String durationText = hoursText + (hoursText.isEmpty() || minsText.isEmpty() ? "" : " ") + minsText;
+
                     return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                            .body(Map.of("error", "Tài khoản đã bị tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần."));
+                            .body(Map.of("error", String.format("Tài khoản đã bị tạm khóa %s do nhập sai mật khẩu %d lần.", durationText, profile.getFailedLoginAttempts())));
                 }
                 profileRepository.save(profile);
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -588,7 +597,7 @@ public class AuthController {
                 profile.setFailedLoginAttempts(0);
                 profile.setLockoutUntil(null);
             }
-            profile.setLastLoginAt(ZonedDateTime.now());
+            profile.setLastLoginAt(ZonedDateTime.now(zoneVn));
             profileRepository.save(profile);
 
             return ResponseEntity.ok(new AuthResponse(
@@ -673,5 +682,17 @@ public class AuthController {
         } catch (Exception e) {
             return ResponseEntity.status(401).body(Map.of("error", "Invalid refresh token"));
         }
+    }
+
+    private int calculateLockoutMinutes(int failedAttempts) {
+        if (failedAttempts < 5) {
+            return 0;
+        }
+        int exponent = failedAttempts - 5;
+        long minutes = 15L * (1L << exponent);
+        if (minutes > 480L || minutes <= 0) {
+            return 480;
+        }
+        return (int) Math.min(minutes, 480L);
     }
 }
