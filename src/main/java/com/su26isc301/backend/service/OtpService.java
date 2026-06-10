@@ -161,6 +161,64 @@ public class OtpService {
         verifiedEmailStore.remove(normalizedEmail);
     }
 
+    @Async
+    public void sendLockoutNotificationEmail(String toEmail, int failedAttempts, int lockoutMinutes) {
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", brevoApiKey);
+
+            String hoursText = lockoutMinutes >= 60 ? (lockoutMinutes / 60) + " giờ" : "";
+            String minsText = (lockoutMinutes % 60) > 0 ? (lockoutMinutes % 60) + " phút" : "";
+            String durationText = hoursText + (hoursText.isEmpty() || minsText.isEmpty() ? "" : " ") + minsText;
+
+            String htmlContent = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                </head>
+                <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9fafb; padding: 20px; color: #333; line-height: 1.6; margin: 0;">
+                    <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                        <div style="text-align: center; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px; margin-bottom: 20px;">
+                            <h2 style="color: #d93025; margin: 0;">Cảnh báo bảo mật tài khoản</h2>
+                        </div>
+                        <div style="font-size: 15px;">
+                            <p>Xin chào,</p>
+                            <p>Hệ thống ghi nhận tài khoản của bạn đã nhập sai mật khẩu liên tiếp <strong>%d lần</strong>.</p>
+                            <p>Để bảo vệ thông tin cá nhân của bạn, chúng tôi đã tạm thời khóa quyền đăng nhập vào tài khoản này trong vòng <strong>%s</strong>.</p>
+                            <div style="background-color: #fff3cd; border: 1px dashed #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0;">
+                                <p style="margin: 0; color: #856404; font-size: 14px;">
+                                    ⏰ Thời gian khóa sẽ tự động kết thúc sau thời hạn trên. Nếu hành động này không phải do bạn thực hiện, xin vui lòng kiểm tra lại độ an toàn mật khẩu hoặc đổi mật khẩu sau khi tài khoản mở khóa để phòng ngừa rủi ro.
+                                </p>
+                            </div>
+                            <p style="font-size: 13px; color: #d93025; margin-top: 20px;">⚠️ Vui lòng KHÔNG cung cấp mật khẩu hoặc mã OTP cho bất kỳ ai dưới mọi hình thức.</p>
+                        </div>
+                        <div style="margin-top: 30px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 15px;">
+                            <p>&copy; 2026 5bro E-commerce. Mọi quyền được bảo lưu.</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """.formatted(failedAttempts, durationText);
+
+            Map<String, Object> bodyMap = Map.of(
+                    "sender", Map.of("email", fromEmail, "name", "5bro E-commerce Security"),
+                    "to", List.of(Map.of("email", toEmail)),
+                    "subject", "Cảnh báo bảo mật: Tài khoản của bạn đang bị khóa tạm thời",
+                    "htmlContent", htmlContent
+            );
+
+            HttpEntity<Map<String, Object>> httpRequest = new HttpEntity<>(bodyMap, headers);
+            restTemplate.postForEntity("https://api.brevo.com/v3/smtp/email", httpRequest, String.class);
+            System.out.println("Đã gửi email cảnh báo khóa tài khoản tới " + toEmail);
+
+        } catch (Exception e) {
+            System.err.println("Lỗi gửi mail cảnh báo khóa tài khoản: " + e.getMessage());
+        }
+    }
+
     public void checkAndIncrementOtpRateLimit(String email) {
         String normalized = email.trim().toLowerCase();
         LocalDateTime now = LocalDateTime.now();

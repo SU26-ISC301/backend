@@ -38,6 +38,7 @@ public class VendorService {
     private final VendorRepository vendorRepository;
     private final ProfileRepository profileRepository;
     private final SubscriptionService subscriptionService;
+    private final OtpService otpService;
 
     @Value("${supabase.url}")
     private String supabaseUrl;
@@ -187,6 +188,12 @@ public class VendorService {
                     int lockoutMinutes = calculateLockoutMinutes(profile.getFailedLoginAttempts());
                     profile.setLockoutUntil(ZonedDateTime.now(zoneVn).plusMinutes(lockoutMinutes));
                     profileRepository.save(profile);
+
+                    try {
+                        otpService.sendLockoutNotificationEmail(profile.getEmail(), profile.getFailedLoginAttempts(), lockoutMinutes);
+                    } catch (Exception mailEx) {
+                        System.err.println("Lỗi gọi gửi email cảnh báo: " + mailEx.getMessage());
+                    }
 
                     String hoursText = lockoutMinutes >= 60 ? (lockoutMinutes / 60) + " giờ" : "";
                     String minsText = (lockoutMinutes % 60) > 0 ? (lockoutMinutes % 60) + " phút" : "";
