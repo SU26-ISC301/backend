@@ -37,6 +37,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.time.ZonedDateTime;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -555,6 +556,10 @@ public class AuthController {
 
             ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
             Map<String, Object> responseBody = response.getBody();
+
+            // Cập nhật thời điểm đăng nhập cuối cùng
+            profile.setLastLoginAt(ZonedDateTime.now());
+            profileRepository.save(profile);
 
             return ResponseEntity.ok(new AuthResponse(
                     (String) responseBody.get("access_token"),
