@@ -199,10 +199,17 @@ public class SubscriptionService {
         String orderCode = String.valueOf(data.get("orderCode"));
         String payosStatus = (String) data.get("status"); // PAID | CANCELLED | EXPIRED
 
-        VendorSubscriptionTransaction transaction = transactionRepository.findByPaymentRef(orderCode)
+        // Sử dụng Lock bi quan để chống Race Condition với Polling
+        VendorSubscriptionTransaction transaction = transactionRepository.findByPaymentRefWithLock(orderCode)
                 .orElse(null);
         if (transaction == null) {
             log.warn("Không tìm thấy transaction với orderCode={}", orderCode);
+            return;
+        }
+
+        // Nếu giao dịch đã được xử lý thành công hoặc thất bại/hủy trước đó, bỏ qua
+        if (!"pending".equals(transaction.getStatus())) {
+            log.info("Transaction {} đã được xử lý trước đó với trạng thái: {}", orderCode, transaction.getStatus());
             return;
         }
 
@@ -218,7 +225,8 @@ public class SubscriptionService {
 
     @Transactional
     public String checkPaymentResult(String orderCode, Long vendorId) {
-        VendorSubscriptionTransaction transaction = transactionRepository.findByPaymentRef(orderCode)
+        // Sử dụng Lock bi quan để đồng bộ luồng
+        VendorSubscriptionTransaction transaction = transactionRepository.findByPaymentRefWithLock(orderCode)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy giao dịch"));
 
         // Đảm bảo transaction thuộc về vendor này
@@ -226,8 +234,9 @@ public class SubscriptionService {
             throw new RuntimeException("Không có quyền truy cập giao dịch này");
         }
 
-        // Nếu đã paid, trả luôn
+        // Nếu đã được thanh toán hoặc bị hủy, trả kết quả luôn mà không cần gọi API PayOS
         if ("paid".equals(transaction.getStatus())) return "paid";
+        if ("cancelled".equals(transaction.getStatus())) return "cancelled";
 
         // Nếu đang pending → hỏi PayOS
         String payosStatus = payOSService.getPaymentStatus(Long.parseLong(orderCode));

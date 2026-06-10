@@ -115,15 +115,25 @@ public class PayOSService {
      */
     public boolean verifyWebhookSignature(Map<String, Object> webhookData, String receivedSignature) {
         try {
-            // PayOS ký trên chuỗi data sắp xếp theo thứ tự key
-            TreeMap<String, Object> sorted = new TreeMap<>(webhookData);
-            StringBuilder dataStr = new StringBuilder();
-            for (Map.Entry<String, Object> entry : sorted.entrySet()) {
-                if (!"signature".equals(entry.getKey())) {
-                    if (!dataStr.isEmpty()) dataStr.append("&");
-                    dataStr.append(entry.getKey()).append("=").append(entry.getValue());
-                }
+            Object dataObj = webhookData.get("data");
+            if (!(dataObj instanceof Map)) {
+                log.warn("Trường 'data' trong webhook không hợp lệ");
+                return false;
             }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> dataMap = (Map<String, Object>) dataObj;
+            
+            // Sắp xếp các key trong trường data theo thứ tự bảng chữ cái
+            TreeMap<String, Object> sortedData = new TreeMap<>(dataMap);
+            StringBuilder dataStr = new StringBuilder();
+            
+            for (Map.Entry<String, Object> entry : sortedData.entrySet()) {
+                if (!dataStr.isEmpty()) {
+                    dataStr.append("&");
+                }
+                dataStr.append(entry.getKey()).append("=").append(entry.getValue() != null ? entry.getValue() : "");
+            }
+            
             String expectedSignature = hmacSHA256(dataStr.toString(), checksumKey);
             return expectedSignature.equals(receivedSignature);
         } catch (Exception e) {
