@@ -281,6 +281,67 @@ public class OtpService {
         }
     }
 
+    @Async
+    public void sendSubscriptionConfirmationEmail(String toEmail, String shopName, String planType, long amount, int expiryDays) {
+        try {
+            String planLabel = "plus".equalsIgnoreCase(planType) ? "Plus" : "Premium";
+            String headerGradient = "plus".equalsIgnoreCase(planType) 
+                    ? "linear-gradient(135deg,#f97316,#ea580c)" 
+                    : "linear-gradient(135deg,#8b5cf6,#6d28d9)";
+            String tableBg = "plus".equalsIgnoreCase(planType) ? "#fff7ed" : "#f5f3ff";
+            String tableBorder = "plus".equalsIgnoreCase(planType) ? "#fed7aa" : "#ddd6fe";
+
+            String htmlContent = """
+                    <!DOCTYPE html>
+                    <html>
+                    <head><meta charset="UTF-8"></head>
+                    <body style="font-family: 'Segoe UI', Tahoma, sans-serif; background:#f9fafb; padding:20px; margin:0;">
+                      <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+                        <div style="background:%s;padding:32px;text-align:center;">
+                          <h1 style="color:#fff;margin:0;font-size:24px;">🎉 Thanh toán thành công!</h1>
+                          <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;">Gói %s đã được kích hoạt</p>
+                        </div>
+                        <div style="padding:28px;">
+                          <p style="font-size:15px;color:#374151;">Xin chào <strong>%s</strong>,</p>
+                          <p style="font-size:15px;color:#374151;">Gói <strong>%s</strong> của bạn đã được kích hoạt thành công.</p>
+                          <div style="background:%s;border:1px solid %s;border-radius:8px;padding:16px;margin:20px 0;">
+                            <table style="width:100%;font-size:14px;color:#374151;">
+                              <tr><td style="padding:4px 0;">📦 Gói đăng ký:</td><td style="text-align:right;font-weight:bold;">%s</td></tr>
+                              <tr><td style="padding:4px 0;">💰 Số tiền:</td><td style="text-align:right;font-weight:bold;">%,d VNĐ</td></tr>
+                              <tr><td style="padding:4px 0;">⏰ Hiệu lực:</td><td style="text-align:right;font-weight:bold;">%d ngày</td></tr>
+                            </table>
+                          </div>
+                          <p style="font-size:13px;color:#6b7280;margin-top:24px;">Nếu có thắc mắc, vui lòng liên hệ hỗ trợ qua email này.</p>
+                        </div>
+                        <div style="background:#f9fafb;padding:16px;text-align:center;font-size:12px;color:#9ca3af;">
+                          © 2026 5bro E-commerce. Mọi quyền được bảo lưu.
+                        </div>
+                      </div>
+                    </body>
+                    </html>
+                    """.formatted(headerGradient, planLabel, shopName, planLabel, tableBg, tableBorder, planLabel, amount, expiryDays);
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", brevoApiKey);
+
+            Map<String, Object> body = Map.of(
+                    "sender", Map.of("email", fromEmail, "name", "ShopVN"),
+                    "to", List.of(Map.of("email", toEmail, "name", shopName)),
+                    "subject", "✅ Kích hoạt gói " + planLabel + " thành công – ShopVN",
+                    "htmlContent", htmlContent
+            );
+
+            restTemplate.postForEntity("https://api.brevo.com/v3/smtp/email",
+                    new HttpEntity<>(body, headers), String.class);
+
+            System.out.println("📧 Đã gửi email xác nhận gói " + planType + " cho email " + toEmail);
+        } catch (Exception e) {
+            System.err.println("Lỗi gửi email xác nhận subscription: " + e.getMessage());
+        }
+    }
+
     public void checkAndIncrementOtpRateLimit(String email) {
         String normalized = email.trim().toLowerCase();
         LocalDateTime now = LocalDateTime.now();
