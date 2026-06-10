@@ -15,11 +15,11 @@ import java.util.UUID;
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
     @Query("SELECT a FROM AuditLog a WHERE " +
-           "(:query IS NULL OR LOWER(a.userEmail) LIKE LOWER(CONCAT('%', :query, '%')) " +
-           " OR LOWER(a.action) LIKE LOWER(CONCAT('%', :query, '%')) " +
-           " OR LOWER(a.ipAddress) LIKE LOWER(CONCAT('%', :query, '%')) " +
-           " OR LOWER(a.payloadSnapshot) LIKE LOWER(CONCAT('%', :query, '%'))) " +
-           "AND (:action IS NULL OR a.action = :action) " +
+           "(cast(:query as string) IS NULL OR LOWER(a.userEmail) LIKE LOWER(CONCAT('%', cast(:query as string), '%')) " +
+           " OR LOWER(a.action) LIKE LOWER(CONCAT('%', cast(:query as string), '%')) " +
+           " OR LOWER(a.ipAddress) LIKE LOWER(CONCAT('%', cast(:query as string), '%')) " +
+           " OR LOWER(a.payloadSnapshot) LIKE LOWER(CONCAT('%', cast(:query as string), '%'))) " +
+           "AND (cast(:action as string) IS NULL OR a.action = cast(:action as string)) " +
            "ORDER BY a.createdAt DESC")
     Page<AuditLog> findWithFilters(
             @Param("query") String query,
@@ -28,10 +28,10 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     );
 
     @Query("SELECT a FROM AuditLog a WHERE a.userId = :userId AND " +
-           "(:query IS NULL OR LOWER(a.action) LIKE LOWER(CONCAT('%', :query, '%')) " +
-           " OR LOWER(a.ipAddress) LIKE LOWER(CONCAT('%', :query, '%')) " +
-           " OR LOWER(a.payloadSnapshot) LIKE LOWER(CONCAT('%', :query, '%'))) " +
-           "AND (:action IS NULL OR a.action = :action) " +
+           "(cast(:query as string) IS NULL OR LOWER(a.action) LIKE LOWER(CONCAT('%', cast(:query as string), '%')) " +
+           " OR LOWER(a.ipAddress) LIKE LOWER(CONCAT('%', cast(:query as string), '%')) " +
+           " OR LOWER(a.payloadSnapshot) LIKE LOWER(CONCAT('%', cast(:query as string), '%'))) " +
+           "AND (cast(:action as string) IS NULL OR a.action = cast(:action as string)) " +
            "ORDER BY a.createdAt DESC")
     Page<AuditLog> findByUserIdWithFilters(
             @Param("userId") UUID userId,
