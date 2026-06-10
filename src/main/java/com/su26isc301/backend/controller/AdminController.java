@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -35,6 +36,13 @@ public class AdminController {
     public ResponseEntity<ApiResponse<List<Profile>>> getAllProfiles() {
         List<Profile> profiles = profileService.getAllProfiles();
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách tài khoản thành công", profiles));
+    }
+
+    // API: Vô hiệu hóa hoặc kích hoạt tài khoản
+    @PostMapping("/profiles/toggle-status")
+    public ResponseEntity<ApiResponse<Profile>> toggleProfileStatus(@RequestParam("profileId") UUID profileId) {
+        Profile updated = profileService.toggleProfileStatus(profileId);
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái tài khoản thành công", updated));
     }
 
     // API: Xem danh sách toàn bộ cửa hàng (vendors)
