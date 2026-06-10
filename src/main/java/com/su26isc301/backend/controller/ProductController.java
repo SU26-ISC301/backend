@@ -4,6 +4,7 @@ import com.su26isc301.backend.dto.request.ProductCreateRequest;
 import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.ProductResponse;
 import com.su26isc301.backend.service.ProductService;
+import com.su26isc301.backend.service.AuditLogService;
 import com.su26isc301.backend.service.SupabaseStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,7 @@ public class ProductController {
 
     private final ProductService productService;
     private final SupabaseStorageService supabaseStorageService;
+    private final AuditLogService auditLogService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<ProductResponse>> createProduct(
@@ -30,6 +32,11 @@ public class ProductController {
     ) {
         String email = authentication.getName();
         ProductResponse response = productService.createProduct(email, request);
+        try {
+            auditLogService.log("CREATE_PRODUCT", "Tạo sản phẩm thành công: " + response.getName() + " (ID: " + response.getId() + ")");
+        } catch (Exception logEx) {
+            System.err.println("Lỗi ghi log CREATE_PRODUCT: " + logEx.getMessage());
+        }
         return ResponseEntity.ok(ApiResponse.success("Tạo sản phẩm thành công", response));
     }
 
@@ -53,6 +60,11 @@ public class ProductController {
     ) {
         String email = authentication.getName();
         ProductResponse response = productService.updateProduct(email, id, request);
+        try {
+            auditLogService.log("UPDATE_PRODUCT", "Cập nhật sản phẩm thành công: " + response.getName() + " (ID: " + response.getId() + ")");
+        } catch (Exception logEx) {
+            System.err.println("Lỗi ghi log UPDATE_PRODUCT: " + logEx.getMessage());
+        }
         return ResponseEntity.ok(ApiResponse.success("Cập nhật sản phẩm thành công", response));
     }
 
@@ -64,6 +76,11 @@ public class ProductController {
     ) {
         String email = authentication.getName();
         productService.deleteProduct(email, id, hard);
+        try {
+            auditLogService.log("DELETE_PRODUCT", (hard ? "Xóa cứng" : "Xóa mềm") + " sản phẩm thành công (ID: " + id + ")");
+        } catch (Exception logEx) {
+            System.err.println("Lỗi ghi log DELETE_PRODUCT: " + logEx.getMessage());
+        }
         String msg = hard ? "Xóa cứng sản phẩm thành công" : "Xóa mềm sản phẩm thành công";
         return ResponseEntity.ok(ApiResponse.success(msg, null));
     }

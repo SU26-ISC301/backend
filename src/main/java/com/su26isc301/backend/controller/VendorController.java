@@ -16,6 +16,7 @@ import com.su26isc301.backend.enums.VendorCategory;
 import com.su26isc301.backend.service.MarketResearchService;
 import com.su26isc301.backend.service.OtpService;
 import com.su26isc301.backend.service.VendorService;
+import com.su26isc301.backend.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -37,6 +38,7 @@ public class VendorController {
     private final VendorService vendorService;
     private final OtpService otpService;
     private final MarketResearchService marketResearchService;
+    private final AuditLogService auditLogService;
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<?>> loginVendor(
@@ -51,11 +53,23 @@ public class VendorController {
                 ipAddress = servletRequest.getRemoteAddr();
             }
 
+            com.su26isc301.backend.dto.response.VendorLoginResponse loginResponse = vendorService.loginVendor(request, deviceToken, userAgent, ipAddress);
+            try {
+                auditLogService.logExplicit(request.getIdentifier(), "LOGIN_SUCCESS", "Vendor đăng nhập thành công");
+            } catch (Exception logEx) {
+                System.err.println("Lỗi ghi log LOGIN_SUCCESS: " + logEx.getMessage());
+            }
+
             return ResponseEntity.ok(ApiResponse.success(
                     "Đăng nhập Vendor thành công",
-                    vendorService.loginVendor(request, deviceToken, userAgent, ipAddress)
+                    loginResponse
             ));
         } catch (RuntimeException e) {
+            try {
+                auditLogService.logExplicit(request.getIdentifier(), "LOGIN_FAILED", "Vendor đăng nhập thất bại: " + e.getMessage());
+            } catch (Exception logEx) {
+                System.err.println("Lỗi ghi log LOGIN_FAILED: " + logEx.getMessage());
+            }
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
         }
     }
@@ -134,6 +148,11 @@ public class VendorController {
             request.setEmail(email);
             Vendor newVendor = vendorService.registerVendorOnboarding(request);
             otpService.removeOtp(email);
+            try {
+                auditLogService.logExplicit(email, "VENDOR_REGISTER", "Vendor đăng ký mở cửa hàng thành công: " + newVendor.getShopName() + " (ID: " + newVendor.getId() + ")");
+            } catch (Exception logEx) {
+                System.err.println("Lỗi ghi log VENDOR_REGISTER: " + logEx.getMessage());
+            }
             return new ResponseEntity<>(
                     ApiResponse.success("Đăng ký Seller thành công!", newVendor),
                     HttpStatus.CREATED

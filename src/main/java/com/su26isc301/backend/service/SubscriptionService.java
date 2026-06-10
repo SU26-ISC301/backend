@@ -10,6 +10,7 @@ import com.su26isc301.backend.repository.VendorSubscriptionPlanRepository;
 import com.su26isc301.backend.repository.VendorSubscriptionTransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.su26isc301.backend.service.AuditLogService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Async;
@@ -50,6 +51,7 @@ public class SubscriptionService {
     private final VendorSubscriptionTransactionRepository transactionRepository;
     private final PayOSService payOSService;
     private final OtpService otpService;
+    private final AuditLogService auditLogService;
 
     @Value("${app.mail.sender}")
     private String fromEmail;
@@ -291,6 +293,12 @@ public class SubscriptionService {
             toEmail = transaction.getVendor().getEmail();
         }
         String shopName = transaction.getVendor().getShopName();
+
+        try {
+            auditLogService.logExplicit(toEmail, "UPGRADE_SUBSCRIPTION_SUCCESS", "Kích hoạt thành công gói " + planType.toUpperCase() + " cho cửa hàng " + shopName + " (ID: " + vendorId + ")");
+        } catch (Exception logEx) {
+            System.err.println("Lỗi ghi log UPGRADE_SUBSCRIPTION_SUCCESS: " + logEx.getMessage());
+        }
 
         // Gửi email xác nhận thông qua OtpService bean để kích hoạt Async chính xác
         if (toEmail != null && !toEmail.trim().isEmpty()) {

@@ -7,6 +7,7 @@ import com.su26isc301.backend.entity.Vendor;
 import com.su26isc301.backend.service.MarketResearchService;
 import com.su26isc301.backend.service.ProfileService;
 import com.su26isc301.backend.service.VendorService;
+import com.su26isc301.backend.service.AuditLogService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,6 +32,9 @@ public class AdminController {
     @Autowired
     private MarketResearchService marketResearchService;
 
+    @Autowired
+    private AuditLogService auditLogService;
+
     // API: Xem danh sách toàn bộ tài khoản
     @GetMapping("/profiles")
     public ResponseEntity<ApiResponse<List<Profile>>> getAllProfiles() {
@@ -42,6 +46,11 @@ public class AdminController {
     @PostMapping("/profiles/toggle-status")
     public ResponseEntity<ApiResponse<Profile>> toggleProfileStatus(@RequestParam("profileId") UUID profileId) {
         Profile updated = profileService.toggleProfileStatus(profileId);
+        try {
+            auditLogService.log("TOGGLE_USER_STATUS", "Cập nhật trạng thái tài khoản " + profileId + " sang: " + (Boolean.TRUE.equals(updated.getIsActive()) ? "Hoạt động" : "Bị khóa"));
+        } catch (Exception e) {
+            System.err.println("Lỗi ghi log TOGGLE_USER_STATUS: " + e.getMessage());
+        }
         return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái tài khoản thành công", updated));
     }
 

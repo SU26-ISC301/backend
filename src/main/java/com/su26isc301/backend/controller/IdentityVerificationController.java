@@ -4,6 +4,7 @@ import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.CccdFaceVerificationResponse;
 import com.su26isc301.backend.dto.response.CccdVerificationResponse;
 import com.su26isc301.backend.service.FptCccdVerificationService;
+import com.su26isc301.backend.service.AuditLogService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class IdentityVerificationController {
 
     private final FptCccdVerificationService fptCccdVerificationService;
+    private final AuditLogService auditLogService;
 
     @PostMapping(value = "/cccd/verify", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Xác thực CCCD/CMND bằng OCR FPT.AI với ảnh mặt trước và mặt sau")
@@ -30,6 +32,15 @@ public class IdentityVerificationController {
             @RequestPart("backImage") MultipartFile backImage
     ) {
         CccdVerificationResponse result = fptCccdVerificationService.verify(frontImage, backImage);
+        try {
+            if (result.isVerified()) {
+                auditLogService.log("VERIFY_CCCD_SUCCESS", "Xác thực CCCD OCR thành công");
+            } else {
+                auditLogService.log("VERIFY_CCCD_FAILED", "Xác thực CCCD OCR không đạt");
+            }
+        } catch (Exception logEx) {
+            System.err.println("Lỗi ghi log VERIFY_CCCD: " + logEx.getMessage());
+        }
         String message = result.isVerified()
                 ? "Xác thực CCCD thành công"
                 : "Xác thực CCCD chưa đạt, vui lòng kiểm tra lại ảnh";
@@ -49,6 +60,15 @@ public class IdentityVerificationController {
                 backImage,
                 faceImage
         );
+        try {
+            if (result.isVerified()) {
+                auditLogService.log("VERIFY_CCCD_SUCCESS", "Xác thực CCCD kèm đối khớp khuôn mặt thành công");
+            } else {
+                auditLogService.log("VERIFY_CCCD_FAILED", "Xác thực CCCD kèm đối khớp khuôn mặt không đạt");
+            }
+        } catch (Exception logEx) {
+            System.err.println("Lỗi ghi log VERIFY_CCCD: " + logEx.getMessage());
+        }
         String message = result.isVerified()
                 ? "Xác thực CCCD và khuôn mặt thành công"
                 : "Xác thực chưa đạt, vui lòng kiểm tra lại ảnh";
