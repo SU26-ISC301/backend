@@ -19,6 +19,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import com.su26isc301.backend.service.JwtService;
 import com.su26isc301.backend.service.OtpService;
 import com.su26isc301.backend.service.SupabaseStorageService;
+import com.su26isc301.backend.service.AuditLogService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,7 @@ public class AuthController {
     private final SupabaseStorageService supabaseStorageService;
     private final OtpService otpService;
     private final UserDeviceRepository userDeviceRepository;
+    private final AuditLogService auditLogService;
     private static final long MAX_AVATAR_SIZE_BYTES = 5L * 1024 * 1024;
 
 
@@ -163,6 +165,12 @@ public class AuthController {
                     .build();
             profileRepository.save(newProfile);
             otpService.removeOtp(email);
+
+            try {
+                auditLogService.logExplicit(pendingUser.getEmail(), "CUSTOMER_REGISTER", "Đăng ký tài khoản Customer thành công: " + pendingUser.getFullName());
+            } catch (Exception e) {
+                System.err.println("Lỗi ghi log CUSTOMER_REGISTER: " + e.getMessage());
+            }
 
             return ResponseEntity.ok(Map.of(
                     "message", "Đăng ký và xác thực thành công. Bạn có thể đăng nhập ngay.",
@@ -403,7 +411,14 @@ public class AuthController {
             profile.setPhone(nextPhone);
             profile.setDateOfBirth(request.getDateOfBirth());
 
-            return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin thành công", profileRepository.save(profile)));
+            Profile savedProfile = profileRepository.save(profile);
+            try {
+                auditLogService.logExplicit(profile.getEmail(), "UPDATE_PROFILE", "Cập nhật thông tin tài khoản thành công cho profile: " + profile.getId());
+            } catch (Exception e) {
+                System.err.println("Lỗi ghi log UPDATE_PROFILE: " + e.getMessage());
+            }
+
+            return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin thành công", savedProfile));
         } catch (HttpClientErrorException e) {
             return ResponseEntity.status(e.getStatusCode()).body(ApiResponse.error("Không thể cập nhật email trên Supabase"));
         } catch (RuntimeException e) {
@@ -592,6 +607,12 @@ public class AuthController {
                         System.err.println("Lỗi gọi gửi email cảnh báo: " + mailEx.getMessage());
                     }
                     
+                    try {
+                        auditLogService.logExplicit(loginEmail, "LOGIN_FAILED", "Tài khoản bị khóa tạm thời do nhập sai mật khẩu quá 5 lần");
+                    } catch (Exception logEx) {
+                        System.err.println("Lỗi ghi log LOGIN_FAILED: " + logEx.getMessage());
+                    }
+
                     String hoursText = lockoutMinutes >= 60 ? (lockoutMinutes / 60) + " giờ" : "";
                     String minsText = (lockoutMinutes % 60) > 0 ? (lockoutMinutes % 60) + " phút" : "";
                     String durationText = hoursText + (hoursText.isEmpty() || minsText.isEmpty() ? "" : " ") + minsText;
@@ -600,6 +621,11 @@ public class AuthController {
                             .body(Map.of("error", String.format("Tài khoản đã bị tạm khóa %s do nhập sai mật khẩu %d lần.", durationText, profile.getFailedLoginAttempts())));
                 }
                 profileRepository.save(profile);
+                try {
+                    auditLogService.logExplicit(loginEmail, "LOGIN_FAILED", "Đăng nhập thất bại: sai mật khẩu (Lần " + profile.getFailedLoginAttempts() + ")");
+                } catch (Exception logEx) {
+                    System.err.println("Lỗi ghi log LOGIN_FAILED: " + logEx.getMessage());
+                }
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("error", "Tài khoản hoặc mật khẩu không đúng"));
             }
@@ -661,6 +687,12 @@ public class AuthController {
                 }
             }
 
+            try {
+                auditLogService.logExplicit(loginEmail, "LOGIN_SUCCESS", "Đăng nhập thành công với vai trò: " + profile.getRole().name());
+            } catch (Exception logEx) {
+                System.err.println("Lỗi ghi log LOGIN_SUCCESS: " + logEx.getMessage());
+            }
+
             return ResponseEntity.ok(new AuthResponse(
                     (String) responseBody.get("access_token"),
                     (String) responseBody.get("refresh_token"),
@@ -711,6 +743,11 @@ public class AuthController {
             profile.setFullName(request.getFullName().trim());
             profile.setDateOfBirth(request.getDateOfBirth());
             Profile updatedProfile = profileRepository.save(profile);
+            try {
+                auditLogService.logExplicit(profile.getEmail(), "UPDATE_PROFILE", "Cập nhật thông tin tài khoản thành công cho profile: " + profile.getId());
+            } catch (Exception e) {
+                System.err.println("Lỗi ghi log UPDATE_PROFILE: " + e.getMessage());
+            }
 
             return ResponseEntity.ok(ApiResponse.success("Cập nhật thông tin thành công", updatedProfile));
         } catch (RuntimeException e) {
