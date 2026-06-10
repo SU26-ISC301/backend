@@ -169,8 +169,11 @@ public class VendorService {
         Vendor vendor = vendorRepository.findByProfile(profile)
                 .orElseThrow(() -> new RuntimeException("Tài khoản này chưa đăng ký gian hàng Vendor"));
 
-        if (profile.getLockoutUntil() != null && profile.getLockoutUntil().isAfter(ZonedDateTime.now())) {
-            long minutesLeft = java.time.Duration.between(ZonedDateTime.now(), profile.getLockoutUntil()).toMinutes() + 1;
+        java.time.ZoneId zoneVn = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+        ZonedDateTime nowVn = ZonedDateTime.now(zoneVn);
+
+        if (profile.getLockoutUntil() != null && profile.getLockoutUntil().isAfter(nowVn)) {
+            long minutesLeft = java.time.Duration.between(nowVn, profile.getLockoutUntil()).toMinutes() + 1;
             throw new RuntimeException(String.format("Tài khoản đang bị tạm khóa. Vui lòng thử lại sau %d phút.", minutesLeft));
         }
 
@@ -181,9 +184,15 @@ public class VendorService {
             if (e.getCause() instanceof org.springframework.web.client.HttpClientErrorException) {
                 profile.setFailedLoginAttempts(profile.getFailedLoginAttempts() + 1);
                 if (profile.getFailedLoginAttempts() >= 5) {
-                    profile.setLockoutUntil(ZonedDateTime.now().plusMinutes(15));
+                    int lockoutMinutes = calculateLockoutMinutes(profile.getFailedLoginAttempts());
+                    profile.setLockoutUntil(ZonedDateTime.now(zoneVn).plusMinutes(lockoutMinutes));
                     profileRepository.save(profile);
-                    throw new RuntimeException("Tài khoản đã bị tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần.");
+
+                    String hoursText = lockoutMinutes >= 60 ? (lockoutMinutes / 60) + " giờ" : "";
+                    String minsText = (lockoutMinutes % 60) > 0 ? (lockoutMinutes % 60) + " phút" : "";
+                    String durationText = hoursText + (hoursText.isEmpty() || minsText.isEmpty() ? "" : " ") + minsText;
+
+                    throw new RuntimeException(String.format("Tài khoản đã bị tạm khóa %s do nhập sai mật khẩu %d lần.", durationText, profile.getFailedLoginAttempts()));
                 }
                 profileRepository.save(profile);
             }
@@ -389,6 +398,15 @@ public class VendorService {
         throw new RuntimeException("Ngày sinh chủ shop không đúng định dạng hỗ trợ: " + rawDateOfBirth);
     }
 
-
-
+    private int calculateLockoutMinutes(int failedAttempts) {
+        if (failedAttempts < 5) {
+            return 0;
+        }
+        int exponent = failedAttempts - 5;
+        long minutes = 15L * (1L << exponent);
+        if (minutes > 480L || minutes <= 0) {
+            return 480;
+        }
+        return (int) Math.min(minutes, 480L);
+    }
 }
