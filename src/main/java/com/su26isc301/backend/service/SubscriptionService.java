@@ -283,11 +283,12 @@ public class SubscriptionService {
         log.info("✅ Vendor {} đã kích hoạt gói {} thành công", vendorId, planType);
 
         // Phân giải Email và Tên shop khi Session Hibernate còn đang mở trong Transaction
-        String toEmail = transaction.getVendor().getEmail();
+        String toEmail = null;
+        if (transaction.getVendor().getProfile() != null) {
+            toEmail = transaction.getVendor().getProfile().getEmail();
+        }
         if (toEmail == null || toEmail.trim().isEmpty()) {
-            if (transaction.getVendor().getProfile() != null) {
-                toEmail = transaction.getVendor().getProfile().getEmail();
-            }
+            toEmail = transaction.getVendor().getEmail();
         }
         String shopName = transaction.getVendor().getShopName();
 
