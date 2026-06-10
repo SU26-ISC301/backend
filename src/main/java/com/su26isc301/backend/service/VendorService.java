@@ -9,8 +9,10 @@ import com.su26isc301.backend.entity.Profile;
 import com.su26isc301.backend.entity.Vendor;
 import com.su26isc301.backend.enums.Roles;
 import com.su26isc301.backend.enums.VendorCategory;
+import com.su26isc301.backend.entity.UserDevice;
 import com.su26isc301.backend.repository.ProfileRepository;
 import com.su26isc301.backend.repository.VendorRepository;
+import com.su26isc301.backend.repository.UserDeviceRepository;
 import com.su26isc301.backend.service.SubscriptionService;
 import lombok.RequiredArgsConstructor;
 import java.time.ZonedDateTime;
@@ -39,6 +41,7 @@ public class VendorService {
     private final ProfileRepository profileRepository;
     private final SubscriptionService subscriptionService;
     private final OtpService otpService;
+    private final UserDeviceRepository userDeviceRepository;
 
     @Value("${supabase.url}")
     private String supabaseUrl;
@@ -162,7 +165,7 @@ public class VendorService {
         return vendorRepository.findByProfile(profile).isPresent();
     }
 
-    public VendorLoginResponse loginVendor(LoginRequest request) {
+    public VendorLoginResponse loginVendor(LoginRequest request, String deviceToken, String userAgent, String ipAddress) {
         String loginEmail = resolveLoginEmail(request.getIdentifier());
         Profile profile = profileRepository.findByEmail(loginEmail)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy tài khoản Vendor"));
@@ -211,6 +214,48 @@ public class VendorService {
             profile.setFailedLoginAttempts(0);
             profile.setLockoutUntil(null);
             profileRepository.save(profile);
+        }
+
+        // Handle device token tracking and warning email on new device
+        if (deviceToken != null && !deviceToken.trim().isEmpty()) {
+            List<UserDevice> existingDevices = userDeviceRepository.findByProfile(profile);
+            Optional<UserDevice> matchingDeviceOpt = existingDevices.stream()
+                    .filter(d -> d.getDeviceToken().equals(deviceToken))
+                    .findFirst();
+
+            if (matchingDeviceOpt.isPresent()) {
+                UserDevice device = matchingDeviceOpt.get();
+                device.setLastIp(ipAddress);
+                device.setUserAgent(userAgent);
+                device.setVerifiedAt(ZonedDateTime.now(zoneVn));
+                userDeviceRepository.save(device);
+            } else {
+                if (existingDevices.isEmpty()) {
+                    UserDevice newDevice = UserDevice.builder()
+                            .profile(profile)
+                            .deviceToken(deviceToken)
+                            .userAgent(userAgent)
+                            .lastIp(ipAddress)
+                            .verifiedAt(ZonedDateTime.now(zoneVn))
+                            .build();
+                    userDeviceRepository.save(newDevice);
+                } else {
+                    try {
+                        otpService.sendNewDeviceLoginEmail(profile.getEmail(), userAgent, ipAddress);
+                    } catch (Exception e) {
+                        System.err.println("Lỗi gửi email đăng nhập thiết bị mới (vendor): " + e.getMessage());
+                    }
+
+                    UserDevice newDevice = UserDevice.builder()
+                            .profile(profile)
+                            .deviceToken(deviceToken)
+                            .userAgent(userAgent)
+                            .lastIp(ipAddress)
+                            .verifiedAt(ZonedDateTime.now(zoneVn))
+                            .build();
+                    userDeviceRepository.save(newDevice);
+                }
+            }
         }
 
         return new VendorLoginResponse(

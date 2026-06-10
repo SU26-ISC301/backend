@@ -11,8 +11,11 @@ import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.AuthResponse;
 import com.su26isc301.backend.dto.request.RefreshTokenRequest;
 import com.su26isc301.backend.entity.Profile;
+import com.su26isc301.backend.entity.UserDevice;
 import com.su26isc301.backend.enums.Roles;
 import com.su26isc301.backend.repository.ProfileRepository;
+import com.su26isc301.backend.repository.UserDeviceRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import com.su26isc301.backend.service.JwtService;
 import com.su26isc301.backend.service.OtpService;
 import com.su26isc301.backend.service.SupabaseStorageService;
@@ -48,8 +51,8 @@ public class AuthController {
     private final JwtService jwtService;
     private final ProfileRepository profileRepository;
     private final SupabaseStorageService supabaseStorageService;
-
     private final OtpService otpService;
+    private final UserDeviceRepository userDeviceRepository;
     private static final long MAX_AVATAR_SIZE_BYTES = 5L * 1024 * 1024;
 
 
@@ -529,7 +532,10 @@ public class AuthController {
 
     @PostMapping("/login")
     @Operation(summary = "Đăng nhập bằng Email hoặc Số điện thoại")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(
+            @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest
+    ) {
         try {
             String loginEmail = request.getIdentifier();
 
@@ -605,6 +611,55 @@ public class AuthController {
             }
             profile.setLastLoginAt(ZonedDateTime.now(zoneVn));
             profileRepository.save(profile);
+
+            // Handle device token tracking and warning email on new device
+            String deviceToken = servletRequest.getHeader("X-Device-Token");
+            String userAgent = servletRequest.getHeader("User-Agent");
+            String ipAddress = servletRequest.getHeader("X-Forwarded-For");
+            if (ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
+                ipAddress = servletRequest.getRemoteAddr();
+            }
+
+            if (deviceToken != null && !deviceToken.trim().isEmpty()) {
+                java.util.List<UserDevice> existingDevices = userDeviceRepository.findByProfile(profile);
+                java.util.Optional<UserDevice> matchingDeviceOpt = existingDevices.stream()
+                        .filter(d -> d.getDeviceToken().equals(deviceToken))
+                        .findFirst();
+
+                if (matchingDeviceOpt.isPresent()) {
+                    UserDevice device = matchingDeviceOpt.get();
+                    device.setLastIp(ipAddress);
+                    device.setUserAgent(userAgent);
+                    device.setVerifiedAt(ZonedDateTime.now(zoneVn));
+                    userDeviceRepository.save(device);
+                } else {
+                    if (existingDevices.isEmpty()) {
+                        UserDevice newDevice = UserDevice.builder()
+                                .profile(profile)
+                                .deviceToken(deviceToken)
+                                .userAgent(userAgent)
+                                .lastIp(ipAddress)
+                                .verifiedAt(ZonedDateTime.now(zoneVn))
+                                .build();
+                        userDeviceRepository.save(newDevice);
+                    } else {
+                        try {
+                            otpService.sendNewDeviceLoginEmail(profile.getEmail(), userAgent, ipAddress);
+                        } catch (Exception e) {
+                            System.err.println("Lỗi gửi email đăng nhập thiết bị mới: " + e.getMessage());
+                        }
+
+                        UserDevice newDevice = UserDevice.builder()
+                                .profile(profile)
+                                .deviceToken(deviceToken)
+                                .userAgent(userAgent)
+                                .lastIp(ipAddress)
+                                .verifiedAt(ZonedDateTime.now(zoneVn))
+                                .build();
+                        userDeviceRepository.save(newDevice);
+                    }
+                }
+            }
 
             return ResponseEntity.ok(new AuthResponse(
                     (String) responseBody.get("access_token"),

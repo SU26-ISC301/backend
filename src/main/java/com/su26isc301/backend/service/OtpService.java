@@ -219,6 +219,68 @@ public class OtpService {
         }
     }
 
+    @Async
+    public void sendNewDeviceLoginEmail(String toEmail, String userAgent, String ipAddress) {
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", brevoApiKey);
+
+            String timeString = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss dd/MM/yyyy"));
+
+            String htmlContent = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                </head>
+                <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9fafb; padding: 20px; color: #333; line-height: 1.6; margin: 0;">
+                    <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                        <div style="text-align: center; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px; margin-bottom: 20px;">
+                            <h2 style="color: #1a73e8; margin: 0;">Cảnh báo bảo mật: Thiết bị đăng nhập mới</h2>
+                        </div>
+                        <div style="font-size: 15px;">
+                            <p>Xin chào,</p>
+                            <p>Tài khoản của bạn đã được đăng nhập từ một thiết bị hoặc trình duyệt mới mà chúng tôi chưa từng ghi nhận trước đây.</p>
+                            <div style="background-color: #f8f9fa; border-left: 4px solid #1a73e8; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                                <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>📍 Thông tin đăng nhập:</strong></p>
+                                <p style="margin: 0 0 5px 0; font-size: 13px; color: #555;"><strong>Trình duyệt/Thiết bị:</strong> %s</p>
+                                <p style="margin: 0 0 5px 0; font-size: 13px; color: #555;"><strong>Địa chỉ IP:</strong> %s</p>
+                                <p style="margin: 0; font-size: 13px; color: #555;"><strong>Thời gian:</strong> %s (Giờ Việt Nam)</p>
+                            </div>
+                            <p>Nếu đây là bạn, bạn không cần thực hiện thêm hành động nào.</p>
+                            <div style="background-color: #fff3cd; border: 1px dashed #ffc107; border-radius: 6px; padding: 15px; margin: 25px 0;">
+                                <p style="margin: 0; color: #856404; font-size: 14px;">
+                                    ⚠️ Nếu bạn không thực hiện đăng nhập này, tài khoản của bạn có thể đã bị xâm nhập. Vui lòng <strong>đổi mật khẩu ngay lập tức</strong> và liên hệ với chúng tôi để được hỗ trợ khóa tài khoản tạm thời.
+                                </p>
+                            </div>
+                        </div>
+                        <div style="margin-top: 30px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 15px;">
+                            <p>&copy; 2026 5bro E-commerce. Mọi quyền được bảo lưu.</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """.formatted(userAgent != null ? userAgent : "Không xác định", ipAddress != null ? ipAddress : "Không xác định", timeString);
+
+            Map<String, Object> bodyMap = Map.of(
+                    "sender", Map.of("email", fromEmail, "name", "5bro E-commerce Security"),
+                    "to", List.of(Map.of("email", toEmail)),
+                    "subject", "Cảnh báo bảo mật: Phát hiện đăng nhập từ thiết bị mới",
+                    "htmlContent", htmlContent
+            );
+
+            HttpEntity<Map<String, Object>> httpRequest = new HttpEntity<>(bodyMap, headers);
+            restTemplate.postForEntity("https://api.brevo.com/v3/smtp/email", httpRequest, String.class);
+            System.out.println("Đã gửi email cảnh báo thiết bị mới tới " + toEmail);
+
+        } catch (Exception e) {
+            System.err.println("Lỗi gửi mail cảnh báo thiết bị mới: " + e.getMessage());
+        }
+    }
+
     public void checkAndIncrementOtpRateLimit(String email) {
         String normalized = email.trim().toLowerCase();
         LocalDateTime now = LocalDateTime.now();

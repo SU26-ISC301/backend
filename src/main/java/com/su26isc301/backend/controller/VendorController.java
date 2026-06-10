@@ -22,6 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 import java.util.Map;
@@ -38,11 +39,21 @@ public class VendorController {
     private final MarketResearchService marketResearchService;
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<?>> loginVendor(@RequestBody LoginRequest request) {
+    public ResponseEntity<ApiResponse<?>> loginVendor(
+            @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest
+    ) {
         try {
+            String deviceToken = servletRequest.getHeader("X-Device-Token");
+            String userAgent = servletRequest.getHeader("User-Agent");
+            String ipAddress = servletRequest.getHeader("X-Forwarded-For");
+            if (ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
+                ipAddress = servletRequest.getRemoteAddr();
+            }
+
             return ResponseEntity.ok(ApiResponse.success(
                     "Đăng nhập Vendor thành công",
-                    vendorService.loginVendor(request)
+                    vendorService.loginVendor(request, deviceToken, userAgent, ipAddress)
             ));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
