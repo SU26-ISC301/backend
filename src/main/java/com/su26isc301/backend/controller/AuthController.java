@@ -580,6 +580,12 @@ public class AuthController {
                     profile.setLockoutUntil(ZonedDateTime.now(zoneVn).plusMinutes(lockoutMinutes));
                     profileRepository.save(profile);
                     
+                    try {
+                        otpService.sendLockoutNotificationEmail(profile.getEmail(), profile.getFailedLoginAttempts(), lockoutMinutes);
+                    } catch (Exception mailEx) {
+                        System.err.println("Lỗi gọi gửi email cảnh báo: " + mailEx.getMessage());
+                    }
+                    
                     String hoursText = lockoutMinutes >= 60 ? (lockoutMinutes / 60) + " giờ" : "";
                     String minsText = (lockoutMinutes % 60) > 0 ? (lockoutMinutes % 60) + " phút" : "";
                     String durationText = hoursText + (hoursText.isEmpty() || minsText.isEmpty() ? "" : " ") + minsText;
