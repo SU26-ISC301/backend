@@ -22,6 +22,7 @@ public class OtpService {
 
     private final Map<String, OtpData> otpStore = new ConcurrentHashMap<>();
     private final Map<String, LocalDateTime> verifiedEmailStore = new ConcurrentHashMap<>();
+    private final Map<String, OtpRateLimitData> rateLimitStore = new ConcurrentHashMap<>();
     private final java.security.SecureRandom random = new java.security.SecureRandom();
 
     @Value("${app.otp.expire-seconds:120}")
@@ -160,12 +161,53 @@ public class OtpService {
         verifiedEmailStore.remove(normalizedEmail);
     }
 
+    public void checkAndIncrementOtpRateLimit(String email) {
+        String normalized = email.trim().toLowerCase();
+        LocalDateTime now = LocalDateTime.now();
+        
+        OtpRateLimitData data = rateLimitStore.computeIfAbsent(normalized, k -> new OtpRateLimitData(now.minusSeconds(70), 0, now.plusDays(1)));
+        
+        // Reset daily count if reset time has passed
+        if (now.isAfter(data.resetTime)) {
+            data.countToday = 0;
+            data.resetTime = now.plusDays(1);
+        }
+        
+        // Check daily limit
+        if (data.countToday >= 5) {
+            throw new RuntimeException("Bạn đã vượt quá giới hạn gửi 5 OTP trong một ngày cho email này. Vui lòng thử lại vào ngày mai.");
+        }
+        
+        // Check 60-second limit
+        long secondsPassed = java.time.Duration.between(data.lastSentAt, now).toSeconds();
+        if (secondsPassed < 60) {
+            throw new RuntimeException("Vui lòng đợi " + (60 - secondsPassed) + " giây trước khi yêu cầu gửi lại mã OTP.");
+        }
+        
+        // Increment count and update last sent time
+        data.lastSentAt = now;
+        data.countToday += 1;
+    }
+
     private record OtpData(String code, LocalDateTime expiresAt, RegisterRequest payload) {}
+
+    private static class OtpRateLimitData {
+        private LocalDateTime lastSentAt;
+        private int countToday;
+        private LocalDateTime resetTime;
+
+        public OtpRateLimitData(LocalDateTime lastSentAt, int countToday, LocalDateTime resetTime) {
+            this.lastSentAt = lastSentAt;
+            this.countToday = countToday;
+            this.resetTime = resetTime;
+        }
+    }
 
     @Scheduled(fixedRate = 900000)
     public void cleanupExpiredOtps() {
         LocalDateTime now = LocalDateTime.now();
         otpStore.entrySet().removeIf(entry -> now.isAfter(entry.getValue().expiresAt()));
         verifiedEmailStore.entrySet().removeIf(entry -> now.isAfter(entry.getValue()));
+        rateLimitStore.entrySet().removeIf(entry -> now.isAfter(entry.getValue().resetTime));
     }
 }

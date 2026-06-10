@@ -13,6 +13,7 @@ import com.su26isc301.backend.repository.ProfileRepository;
 import com.su26isc301.backend.repository.VendorRepository;
 import com.su26isc301.backend.service.SubscriptionService;
 import lombok.RequiredArgsConstructor;
+import java.time.ZonedDateTime;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -168,7 +169,34 @@ public class VendorService {
         Vendor vendor = vendorRepository.findByProfile(profile)
                 .orElseThrow(() -> new RuntimeException("Tài khoản này chưa đăng ký gian hàng Vendor"));
 
-        Map responseBody = loginSupabase(loginEmail, request.getPassword());
+        if (profile.getLockoutUntil() != null && profile.getLockoutUntil().isAfter(ZonedDateTime.now())) {
+            long minutesLeft = java.time.Duration.between(ZonedDateTime.now(), profile.getLockoutUntil()).toMinutes() + 1;
+            throw new RuntimeException(String.format("Tài khoản đang bị tạm khóa. Vui lòng thử lại sau %d phút.", minutesLeft));
+        }
+
+        Map responseBody;
+        try {
+            responseBody = loginSupabase(loginEmail, request.getPassword());
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof org.springframework.web.client.HttpClientErrorException) {
+                profile.setFailedLoginAttempts(profile.getFailedLoginAttempts() + 1);
+                if (profile.getFailedLoginAttempts() >= 5) {
+                    profile.setLockoutUntil(ZonedDateTime.now().plusMinutes(15));
+                    profileRepository.save(profile);
+                    throw new RuntimeException("Tài khoản đã bị tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần.");
+                }
+                profileRepository.save(profile);
+            }
+            throw e;
+        }
+
+        // Reset failed login attempts on success
+        if (profile.getFailedLoginAttempts() > 0 || profile.getLockoutUntil() != null) {
+            profile.setFailedLoginAttempts(0);
+            profile.setLockoutUntil(null);
+            profileRepository.save(profile);
+        }
+
         return new VendorLoginResponse(
                 (String) responseBody.get("access_token"),
                 (String) responseBody.get("refresh_token"),

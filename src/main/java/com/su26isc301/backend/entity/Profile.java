@@ -48,4 +48,11 @@ public class Profile {
 
     @Column(name = "last_login_at")
     private ZonedDateTime lastLoginAt;
+
+    @Column(name = "failed_login_attempts")
+    @Builder.Default
+    private Integer failedLoginAttempts = 0;
+
+    @Column(name = "lockout_until")
+    private ZonedDateTime lockoutUntil;
 }
