@@ -45,4 +45,7 @@ public class Profile {
 
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
+
+    @Column(name = "last_login_at")
+    private ZonedDateTime lastLoginAt;
 }
