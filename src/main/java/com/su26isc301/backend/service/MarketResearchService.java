@@ -812,19 +812,37 @@ public class MarketResearchService {
                                 option("tai-nghe-co-day", "Tai nghe có dây"),
                                 option("de-sac-khong-day", "Đế sạc không dây")
                         )),
+                        option("camera-nhiep-anh", "Camera & Nhiếp ảnh", false, List.of(
+                                option("may-anh-compact", "Máy ảnh compact"),
+                                option("may-anh-mirrorless", "Máy ảnh mirrorless"),
+                                option("may-anh-dslr", "Máy ảnh DSLR"),
+                                option("camera-hanh-dong", "Camera hành động"),
+                                option("drone", "Drone / Máy bay không người lái"),
+                                option("phu-kien-camera", "Phụ kiện camera")
+                        )),
                         option("am-thanh-video", "Âm thanh & Video", false, List.of(
                                 option("loa-bluetooth", "Loa Bluetooth"),
+                                option("loa-de-ban", "Loa để bàn"),
                                 option("tai-nghe-bluetooth", "Tai nghe Bluetooth"),
-                                option("soundbar", "Soundbar")
+                                option("soundbar", "Soundbar"),
+                                option("micro-thu-am", "Micro & Thu âm")
+                        )),
+                        option("choi-game-console", "Chơi game & Bảng điều khiển", false, List.of(
+                                option("console-tro-choi", "Bảng điều khiển trò chơi video"),
+                                option("console-cam-tay", "Bảng điều khiển cầm tay"),
+                                option("tro-choi-dien-tu", "Trò chơi điện tử"),
+                                option("phu-kien-console", "Phụ kiện bảng điều khiển")
                         )),
                         option("thiet-bi-thong-minh", "Thiết bị thông minh & Thiết bị đeo", false, List.of(
                                 option("dong-ho-thong-minh", "Đồng hồ thông minh"),
                                 option("vong-suc-khoe", "Vòng đeo sức khỏe"),
-                                option("smarthome", "Thiết bị nhà thông minh")
+                                option("smarthome", "Thiết bị nhà thông minh"),
+                                option("den-thong-minh", "Đèn thông minh")
                         )),
                         option("dien-thoai-may-tinh-bang", "Điện thoại & Máy tính bảng", false, List.of(
                                 option("dien-thoai-thong-minh", "Điện thoại thông minh"),
-                                option("may-tinh-bang", "Máy tính bảng")
+                                option("may-tinh-bang", "Máy tính bảng"),
+                                option("dien-thoai-pho-thong", "Điện thoại phổ thông")
                         ))
                 )),
                 option("may-tinh-van-phong", "Máy tính & Thiết bị Văn phòng", false, List.of(
@@ -836,7 +854,25 @@ public class MarketResearchService {
                         option("phu-kien-may-tinh", "Phụ kiện máy tính", false, List.of(
                                 option("ban-phim", "Bàn phím"),
                                 option("chuot-pc", "Chuột máy tính"),
-                                option("man-hinh", "Màn hình")
+                                option("man-hinh", "Màn hình"),
+                                option("tai-nghe-gaming", "Tai nghe Gaming"),
+                                option("webcam", "Webcam"),
+                                option("loa-may-tinh", "Loa máy tính")
+                        )),
+                        option("luu-tru", "Lưu trữ", false, List.of(
+                                option("o-cung-hdd", "Ổ cứng HDD"),
+                                option("o-cung-ssd", "Ổ cứng SSD"),
+                                option("usb-flash-drive", "USB Flash Drive"),
+                                option("the-nho", "Thẻ nhớ"),
+                                option("nas", "NAS / Network Storage")
+                        )),
+                        option("linh-kien-may-tinh", "Linh kiện máy tính", false, List.of(
+                                option("cpu", "CPU / Bộ vi xử lý"),
+                                option("mainboard", "Mainboard / Bo mạch chủ"),
+                                option("ram", "RAM"),
+                                option("card-do-hoa", "Card đồ họa (GPU)"),
+                                option("nguon-may-tinh", "Nguồn máy tính (PSU)"),
+                                option("tan-nhiet", "Tản nhiệt")
                         ))
                 )),
                 option("thiet-bi-mang", "Thiết bị mạng", false, List.of(
@@ -855,6 +891,11 @@ public class MarketResearchService {
                                 option("android-tv", "Android TV"),
                                 option("qled-tv", "QLED TV"),
                                 option("oled-tv", "OLED TV")
+                        )),
+                        option("dau-phat-streaming", "Đầu phát trực tuyến", false, List.of(
+                                option("android-tv-box", "Android TV Box"),
+                                option("chromecast", "Google Chromecast"),
+                                option("fire-stick", "Amazon Fire Stick")
                         )),
                         option("may-chieu", "Máy chiếu", false, List.of(
                                 option("projector-mini", "Máy chiếu mini"),
