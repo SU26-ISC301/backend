@@ -54,6 +54,10 @@ public class PayOSService {
     @SuppressWarnings("unchecked")
     public String createPaymentLink(long orderCode, long amount, String description,
                                     long vendorId, String planType) {
+        return createPaymentLink(orderCode, amount, description);
+    }
+
+    public String createPaymentLink(long orderCode, long amount, String description) {
         try {
             // Bước 1: Tạo chữ ký
             String data = "amount=" + amount +

@@ -7,6 +7,7 @@ import com.su26isc301.backend.dto.response.SubscriptionStatusResponse;
 import com.su26isc301.backend.entity.Vendor;
 import com.su26isc301.backend.repository.VendorRepository;
 import com.su26isc301.backend.service.SubscriptionService;
+import com.su26isc301.backend.service.AdvertisementService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +24,7 @@ import java.util.UUID;
 public class SubscriptionController {
 
     private final SubscriptionService subscriptionService;
+    private final AdvertisementService advertisementService;
     private final VendorRepository vendorRepository;
 
     /**
@@ -84,6 +86,7 @@ public class SubscriptionController {
         try {
             log.info("📥 PayOS webhook nhận được: {}", webhookData);
             subscriptionService.handlePayOSWebhook(webhookData);
+            advertisementService.handlePayOSWebhook(webhookData);
             return ResponseEntity.ok(Map.of("code", "00", "desc", "success"));
         } catch (Exception e) {
             log.error("Lỗi xử lý PayOS webhook", e);
