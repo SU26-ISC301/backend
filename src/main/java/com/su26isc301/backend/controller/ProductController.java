@@ -40,6 +40,12 @@ public class ProductController {
         return ResponseEntity.ok(ApiResponse.success("Tạo sản phẩm thành công", response));
     }
 
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getPublicProducts() {
+        List<ProductResponse> responses = productService.getPublicActiveProducts();
+        return ResponseEntity.ok(ApiResponse.success("Lấy danh sách sản phẩm đang bán thành công", responses));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<ProductResponse>> getProductById(@PathVariable Long id) {
         ProductResponse response = productService.getProductById(id);

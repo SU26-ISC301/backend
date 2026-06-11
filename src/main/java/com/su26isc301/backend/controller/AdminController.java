@@ -98,6 +98,15 @@ public class AdminController {
         return ResponseEntity.ok(ApiResponse.success("Cập nhật dữ liệu nghiên cứu thị trường thành công", response));
     }
 
+    // API: Admin lấy danh sách sản phẩm thật, có thể lọc theo trạng thái pending/active/rejected...
+    @GetMapping("/products")
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getProducts(
+            @RequestParam(value = "status", required = false) String status
+    ) {
+        List<ProductResponse> products = productService.getProductsForAdmin(status);
+        return ResponseEntity.ok(ApiResponse.success("Lấy danh sách sản phẩm thành công", products));
+    }
+
     // API: Admin phê duyệt sản phẩm
     @PostMapping("/products/{id}/approve")
     public ResponseEntity<ApiResponse<ProductResponse>> approveProduct(@PathVariable("id") Long id) {

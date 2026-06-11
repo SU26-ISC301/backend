@@ -100,6 +100,27 @@ public class ProductService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<ProductResponse> getProductsForAdmin(String status) {
+        String normalizedStatus = status != null ? status.trim().toLowerCase() : "";
+        List<Product> products = normalizedStatus.isBlank()
+                ? productRepository.findByIsActiveTrueOrderByCreatedAtDesc()
+                : productRepository.findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(normalizedStatus);
+
+        return products.stream()
+                .map(productMapper::mapToProductResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProductResponse> getPublicActiveProducts() {
+        return productRepository
+                .findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(ProductStatus.ACTIVE.getValue())
+                .stream()
+                .map(productMapper::mapToProductResponse)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public ProductResponse updateProduct(String email, Long id, ProductCreateRequest request) {
         Product product = productRepository.findById(id)
