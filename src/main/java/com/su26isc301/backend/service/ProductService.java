@@ -138,6 +138,9 @@ public class ProductService {
             } else if (requestedStatus.equals("draft")) {
                 product.setStatus(ProductStatus.DRAFT.getValue());
                 product.setRejectReason(null);
+            } else if (requestedStatus.equals("pending")) {
+                product.setStatus(ProductStatus.PENDING.getValue());
+                product.setRejectReason(null);
             } else {
                 product.setStatus(ProductStatus.ACTIVE.getValue());
             }
