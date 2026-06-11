@@ -7,7 +7,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum ProductStatus {
     DRAFT("draft"),
+    PENDING("pending"),
     ACTIVE("active"),
+    REJECTED("rejected"),
+    WARNING("warning"),
     INACTIVE("inactive");
 
     private final String value;
