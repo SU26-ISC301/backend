@@ -27,6 +27,8 @@ public class ProductResponse {
     private BigDecimal avgRating;
     private Integer soldCount;
     private ZonedDateTime createdAt;
+    private String vendorPlanType;
+    private Boolean premiumHighlighted;
     private List<ProductMediaResponse> mediaList;
     private List<ProductAttributeResponse> attributes;
     private List<ProductVariantResponse> variants;
