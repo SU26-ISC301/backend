@@ -42,7 +42,8 @@ public class SubscriptionService {
     private static final long PRICE_PREMIUM = 20_000L;
 
     // Số ngày hiệu lực
-    private static final int DAYS_PLUS    = 15;
+    private static final int DAYS_FREE    = 30;
+    private static final int DAYS_PLUS    = 30;
     private static final int DAYS_PREMIUM = 30;
 
     // ─── Dependencies ──────────────────────────────────────────────────────────
@@ -71,6 +72,8 @@ public class SubscriptionService {
                     .planType(PLAN_FREE)
                     .totalSlots(FREE_SLOTS)
                     .usedSlots(0)
+                    .startedAt(ZonedDateTime.now())
+                    .expiresAt(ZonedDateTime.now().plusDays(DAYS_FREE))
                     .isActive(true)
                     .build();
             return planRepository.save(plan);
@@ -82,16 +85,11 @@ public class SubscriptionService {
     public SubscriptionStatusResponse getSubscriptionStatus(Long vendorId) {
         VendorSubscriptionPlan plan = planRepository.findByVendorId(vendorId)
                 .orElseGet(() -> getOrCreateFreePlan(vendorId));
+        plan = normalizePlanForCurrentCycle(plan);
 
         boolean unlimited = plan.getTotalSlots() == -1;
         int remaining = unlimited ? -1 : Math.max(0, plan.getTotalSlots() - plan.getUsedSlots());
         boolean canPost = unlimited || remaining > 0;
-
-        // Kiểm tra hết hạn
-        if (plan.getExpiresAt() != null && ZonedDateTime.now().isAfter(plan.getExpiresAt())) {
-            // Gói đã hết hạn → xuống Free
-            canPost = false;
-        }
 
         return SubscriptionStatusResponse.builder()
                 .planType(plan.getPlanType())
@@ -110,11 +108,7 @@ public class SubscriptionService {
     public boolean canPostProduct(Long vendorId) {
         VendorSubscriptionPlan plan = planRepository.findByVendorId(vendorId)
                 .orElseGet(() -> getOrCreateFreePlan(vendorId));
-
-        // Hết hạn → không được đăng
-        if (plan.getExpiresAt() != null && ZonedDateTime.now().isAfter(plan.getExpiresAt())) {
-            return false;
-        }
+        plan = normalizePlanForCurrentCycle(plan);
 
         if (plan.getTotalSlots() == -1) return true; // unlimited (premium)
         return plan.getUsedSlots() < plan.getTotalSlots();
@@ -126,6 +120,7 @@ public class SubscriptionService {
     public void consumeOneSlot(Long vendorId) {
         VendorSubscriptionPlan plan = planRepository.findByVendorId(vendorId)
                 .orElseGet(() -> getOrCreateFreePlan(vendorId));
+        plan = normalizePlanForCurrentCycle(plan);
 
         if (plan.getTotalSlots() == -1) return; // unlimited, không cần trừ
 
@@ -335,7 +330,25 @@ public class SubscriptionService {
     }
 
     private int getExpiryDays(String planType) {
-        return PLAN_PLUS.equals(planType) ? DAYS_PLUS : DAYS_PREMIUM;
+        return switch (planType) {
+            case PLAN_PLUS -> DAYS_PLUS;
+            case PLAN_PREMIUM -> DAYS_PREMIUM;
+            default -> DAYS_FREE;
+        };
+    }
+
+    private VendorSubscriptionPlan normalizePlanForCurrentCycle(VendorSubscriptionPlan plan) {
+        ZonedDateTime now = ZonedDateTime.now();
+        if (plan.getExpiresAt() == null || now.isAfter(plan.getExpiresAt())) {
+            plan.setPlanType(PLAN_FREE);
+            plan.setTotalSlots(FREE_SLOTS);
+            plan.setUsedSlots(0);
+            plan.setStartedAt(now);
+            plan.setExpiresAt(now.plusDays(DAYS_FREE));
+            plan.setIsActive(true);
+            return planRepository.save(plan);
+        }
+        return plan;
     }
 
     @SuppressWarnings("unchecked")

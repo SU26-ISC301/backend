@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +30,8 @@ public class ProductService {
     private final CategoryRepository categoryRepository;
     private final BrandRepository brandRepository;
     private final ProductMapper productMapper;
+    private final SubscriptionService subscriptionService;
+    private final VendorSubscriptionPlanRepository subscriptionPlanRepository;
 
     @Transactional
     public ProductResponse createProduct(String email, ProductCreateRequest request) {
@@ -52,6 +55,10 @@ public class ProductService {
         String requestedStatus = request.getStatus() != null ? request.getStatus().trim().toLowerCase() : ProductStatus.DRAFT.getValue();
         if (!requestedStatus.equals(ProductStatus.DRAFT.getValue()) && !requestedStatus.equals(ProductStatus.PENDING.getValue())) {
             requestedStatus = ProductStatus.PENDING.getValue();
+        }
+        boolean consumesSlot = requestedStatus.equals(ProductStatus.PENDING.getValue());
+        if (consumesSlot && !subscriptionService.canPostProduct(vendor.getId())) {
+            throw new ForbiddenAccessException("Đã hết lượt đăng tin trong tháng. Vui lòng nâng cấp gói để tiếp tục đăng sản phẩm.");
         }
 
         Product product = Product.builder()
@@ -82,21 +89,24 @@ public class ProductService {
         syncVariants(product, request.getVariants(), flatValues);
 
         Product savedProduct = productRepository.save(product);
-        return productMapper.mapToProductResponse(savedProduct);
+        if (consumesSlot) {
+            subscriptionService.consumeOneSlot(vendor.getId());
+        }
+        return mapToProductResponseWithVendorPlan(savedProduct);
     }
 
     @Transactional(readOnly = true)
     public ProductResponse getProductById(Long id) {
         Product product = productRepository.findByIdAndIsActiveTrue(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm hoặc sản phẩm đã bị xóa với ID: " + id));
-        return productMapper.mapToProductResponse(product);
+        return mapToProductResponseWithVendorPlan(product);
     }
 
     @Transactional(readOnly = true)
     public List<ProductResponse> getProductsByVendor(Long vendorId) {
         List<Product> products = productRepository.findByVendorIdAndIsActiveTrue(vendorId);
         return products.stream()
-                .map(productMapper::mapToProductResponse)
+                .map(this::mapToProductResponseWithVendorPlan)
                 .collect(Collectors.toList());
     }
 
@@ -108,7 +118,7 @@ public class ProductService {
                 : productRepository.findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(normalizedStatus);
 
         return products.stream()
-                .map(productMapper::mapToProductResponse)
+                .map(this::mapToProductResponseWithVendorPlan)
                 .collect(Collectors.toList());
     }
 
@@ -117,7 +127,7 @@ public class ProductService {
         return productRepository
                 .findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(ProductStatus.ACTIVE.getValue())
                 .stream()
-                .map(productMapper::mapToProductResponse)
+                .map(this::mapToProductResponseWithVendorPlan)
                 .collect(Collectors.toList());
     }
 
@@ -152,6 +162,11 @@ public class ProductService {
 
         String currentStatus = product.getStatus() != null ? product.getStatus().trim().toLowerCase() : ProductStatus.DRAFT.getValue();
         String requestedStatus = request.getStatus() != null ? request.getStatus().trim().toLowerCase() : ProductStatus.DRAFT.getValue();
+        boolean consumesSlot = currentStatus.equals(ProductStatus.DRAFT.getValue())
+                && requestedStatus.equals(ProductStatus.PENDING.getValue());
+        if (consumesSlot && !subscriptionService.canPostProduct(product.getVendor().getId())) {
+            throw new ForbiddenAccessException("Đã hết lượt đăng tin trong tháng. Vui lòng nâng cấp gói để tiếp tục đăng sản phẩm.");
+        }
 
         if (currentStatus.equals(ProductStatus.ACTIVE.getValue()) || currentStatus.equals(ProductStatus.INACTIVE.getValue())) {
             if (requestedStatus.equals("inactive")) {
@@ -188,7 +203,10 @@ public class ProductService {
         syncVariants(product, request.getVariants(), flatValues);
 
         Product savedProduct = productRepository.save(product);
-        return productMapper.mapToProductResponse(savedProduct);
+        if (consumesSlot) {
+            subscriptionService.consumeOneSlot(product.getVendor().getId());
+        }
+        return mapToProductResponseWithVendorPlan(savedProduct);
     }
 
     @Transactional
@@ -221,7 +239,7 @@ public class ProductService {
         product.setStatus(ProductStatus.ACTIVE.getValue());
         product.setRejectReason(null);
         Product saved = productRepository.save(product);
-        return productMapper.mapToProductResponse(saved);
+        return mapToProductResponseWithVendorPlan(saved);
     }
 
     @Transactional
@@ -231,7 +249,7 @@ public class ProductService {
         product.setStatus(ProductStatus.REJECTED.getValue());
         product.setRejectReason(reason);
         Product saved = productRepository.save(product);
-        return productMapper.mapToProductResponse(saved);
+        return mapToProductResponseWithVendorPlan(saved);
     }
 
     @Transactional
@@ -241,10 +259,34 @@ public class ProductService {
         product.setStatus(ProductStatus.WARNING.getValue());
         product.setRejectReason(reason);
         Product saved = productRepository.save(product);
-        return productMapper.mapToProductResponse(saved);
+        return mapToProductResponseWithVendorPlan(saved);
     }
 
     // --- Private Helper Methods (DRY Collection Synchronization & Matching) ---
+
+    private ProductResponse mapToProductResponseWithVendorPlan(Product product) {
+        ProductResponse response = productMapper.mapToProductResponse(product);
+        if (response == null || product == null || product.getVendor() == null) {
+            return response;
+        }
+
+        subscriptionPlanRepository.findByVendorIdAndIsActiveTrue(product.getVendor().getId())
+                .ifPresent(plan -> {
+                    boolean activeNow = plan.getExpiresAt() == null || ZonedDateTime.now().isBefore(plan.getExpiresAt());
+                    String planType = plan.getPlanType() != null ? plan.getPlanType().trim().toLowerCase() : SubscriptionService.PLAN_FREE;
+                    response.setVendorPlanType(planType);
+                    response.setPremiumHighlighted(activeNow && SubscriptionService.PLAN_PREMIUM.equals(planType));
+                });
+
+        if (response.getVendorPlanType() == null) {
+            response.setVendorPlanType(SubscriptionService.PLAN_FREE);
+        }
+        if (response.getPremiumHighlighted() == null) {
+            response.setPremiumHighlighted(false);
+        }
+
+        return response;
+    }
 
     private void syncMediaList(Product product, List<ProductCreateRequest.ProductMediaRequest> mediaRequests) {
         if (mediaRequests == null) {
