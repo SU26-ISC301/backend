@@ -25,6 +25,7 @@ public class ProductMapper {
         response.setSlug(product.getSlug());
         response.setDescription(product.getDescription());
         response.setStatus(product.getStatus());
+        response.setRejectReason(product.getRejectReason());
         response.setAvgRating(product.getAvgRating());
         response.setSoldCount(product.getSoldCount());
         response.setCreatedAt(product.getCreatedAt());

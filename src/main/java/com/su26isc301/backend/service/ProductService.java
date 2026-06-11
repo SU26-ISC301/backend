@@ -49,6 +49,11 @@ public class ProductService {
 
         String uniqueSlug = createUniqueSlug(request.getName());
 
+        String requestedStatus = request.getStatus() != null ? request.getStatus().trim().toLowerCase() : ProductStatus.DRAFT.getValue();
+        if (!requestedStatus.equals(ProductStatus.DRAFT.getValue()) && !requestedStatus.equals(ProductStatus.PENDING.getValue())) {
+            requestedStatus = ProductStatus.PENDING.getValue();
+        }
+
         Product product = Product.builder()
                 .vendor(vendor)
                 .category(category)
@@ -56,7 +61,7 @@ public class ProductService {
                 .name(request.getName())
                 .description(request.getDescription())
                 .slug(uniqueSlug)
-                .status(request.getStatus() != null ? request.getStatus() : ProductStatus.DRAFT.getValue())
+                .status(requestedStatus)
                 .condition(request.getCondition() != null ? request.getCondition() : ProductCondition.NEW.getValue())
                 .originCountry(request.getOriginCountry())
                 .warrantyType(request.getWarrantyType())
@@ -123,7 +128,27 @@ public class ProductService {
         product.setCategory(category);
         product.setBrand(brand);
         product.setDescription(request.getDescription());
-        product.setStatus(request.getStatus() != null ? request.getStatus() : ProductStatus.DRAFT.getValue());
+
+        String currentStatus = product.getStatus() != null ? product.getStatus().trim().toLowerCase() : ProductStatus.DRAFT.getValue();
+        String requestedStatus = request.getStatus() != null ? request.getStatus().trim().toLowerCase() : ProductStatus.DRAFT.getValue();
+
+        if (currentStatus.equals(ProductStatus.ACTIVE.getValue()) || currentStatus.equals(ProductStatus.INACTIVE.getValue())) {
+            if (requestedStatus.equals("inactive")) {
+                product.setStatus(ProductStatus.INACTIVE.getValue());
+            } else if (requestedStatus.equals("draft")) {
+                product.setStatus(ProductStatus.DRAFT.getValue());
+                product.setRejectReason(null);
+            } else {
+                product.setStatus(ProductStatus.ACTIVE.getValue());
+            }
+        } else {
+            if (requestedStatus.equals("draft")) {
+                product.setStatus(ProductStatus.DRAFT.getValue());
+            } else {
+                product.setStatus(ProductStatus.PENDING.getValue());
+            }
+            product.setRejectReason(null);
+        }
         product.setCondition(request.getCondition() != null ? request.getCondition() : ProductCondition.NEW.getValue());
         product.setOriginCountry(request.getOriginCountry());
         product.setWarrantyType(request.getWarrantyType());
@@ -163,6 +188,36 @@ public class ProductService {
             }
             productRepository.save(product);
         }
+    }
+
+    @Transactional
+    public ProductResponse approveProduct(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với ID: " + id));
+        product.setStatus(ProductStatus.ACTIVE.getValue());
+        product.setRejectReason(null);
+        Product saved = productRepository.save(product);
+        return productMapper.mapToProductResponse(saved);
+    }
+
+    @Transactional
+    public ProductResponse rejectProduct(Long id, String reason) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với ID: " + id));
+        product.setStatus(ProductStatus.REJECTED.getValue());
+        product.setRejectReason(reason);
+        Product saved = productRepository.save(product);
+        return productMapper.mapToProductResponse(saved);
+    }
+
+    @Transactional
+    public ProductResponse warnProduct(Long id, String reason) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với ID: " + id));
+        product.setStatus(ProductStatus.WARNING.getValue());
+        product.setRejectReason(reason);
+        Product saved = productRepository.save(product);
+        return productMapper.mapToProductResponse(saved);
     }
 
     // --- Private Helper Methods (DRY Collection Synchronization & Matching) ---

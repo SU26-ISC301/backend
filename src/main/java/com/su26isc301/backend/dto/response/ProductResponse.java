@@ -23,6 +23,7 @@ public class ProductResponse {
     private String slug;
     private String description;
     private String status;
+    private String rejectReason;
     private BigDecimal avgRating;
     private Integer soldCount;
     private ZonedDateTime createdAt;

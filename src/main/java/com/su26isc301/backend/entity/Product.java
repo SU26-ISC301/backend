@@ -55,6 +55,9 @@ public class Product {
     @Builder.Default
     private String status = "draft";
 
+    @Column(name = "reject_reason")
+    private String rejectReason;
+
     @Column(name = "contains_dangerous_goods")
     @Builder.Default
     private String containsDangerousGoods = "no";
