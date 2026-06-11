@@ -19,6 +19,12 @@ public class ProductMapper {
         response.setId(product.getId());
         response.setVendorId(product.getVendor() != null ? product.getVendor().getId() : null);
         response.setVendorName(product.getVendor() != null ? product.getVendor().getShopName() : null);
+        response.setVendorLogoUrl(product.getVendor() != null ? product.getVendor().getLogoUrl() : null);
+        response.setVendorDescription(product.getVendor() != null ? product.getVendor().getDescription() : null);
+        response.setVendorEmail(product.getVendor() != null ? product.getVendor().getEmail() : null);
+        response.setVendorRating(product.getVendor() != null ? product.getVendor().getAvgRating() : null);
+        response.setVendorCreatedAt(product.getVendor() != null ? product.getVendor().getCreatedAt() : null);
+        response.setVendorCategory(product.getVendor() != null ? product.getVendor().getCategory() : null);
         response.setCategoryId(product.getCategory() != null ? product.getCategory().getId() : null);
         response.setCategoryName(product.getCategory() != null ? product.getCategory().getName() : null);
         response.setName(product.getName());
@@ -29,6 +35,18 @@ public class ProductMapper {
         response.setAvgRating(product.getAvgRating());
         response.setSoldCount(product.getSoldCount());
         response.setCreatedAt(product.getCreatedAt());
+        response.setUpdatedAt(product.getUpdatedAt());
+        response.setContainsDangerousGoods(product.getContainsDangerousGoods());
+        response.setDangerousGoodsType(product.getDangerousGoodsType());
+        response.setSafetyWarning(product.getSafetyWarning());
+        response.setWarrantyType(product.getWarrantyType());
+        response.setOriginCountry(product.getOriginCountry());
+        response.setCondition(product.getCondition());
+        response.setParcelWeightG(product.getParcelWeightG());
+        response.setParcelWidth(product.getParcelWidth());
+        response.setParcelLength(product.getParcelLength());
+        response.setParcelHeight(product.getParcelHeight());
+        response.setDeliveryMethod(product.getDeliveryMethod());
 
         // Map Media List
         if (product.getMediaList() != null) {

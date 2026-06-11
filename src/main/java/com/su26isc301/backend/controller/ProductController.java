@@ -47,8 +47,14 @@ public class ProductController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<ProductResponse>> getProductById(@PathVariable Long id) {
-        ProductResponse response = productService.getProductById(id);
+    public ResponseEntity<ApiResponse<ProductResponse>> getProductById(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        boolean revealContact = authentication != null
+                && authentication.isAuthenticated()
+                && !"anonymousUser".equals(authentication.getName());
+        ProductResponse response = productService.getProductById(id, revealContact);
         return ResponseEntity.ok(ApiResponse.success("Lấy thông tin sản phẩm thành công", response));
     }
 

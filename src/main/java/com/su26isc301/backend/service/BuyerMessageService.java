@@ -61,7 +61,7 @@ public class BuyerMessageService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vui lòng chọn shop cần liên hệ");
         }
         Vendor vendor = vendorRepository.findById(vendorId)
-                .filter(item -> "active".equalsIgnoreCase(item.getStatus()))
+                .filter(item -> "active".equalsIgnoreCase(item.getStatus()) || "approved".equalsIgnoreCase(item.getStatus()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy shop"));
 
         Conversation conversation = conversationRepository.findByVendorIdAndCustomerId(vendorId, buyer.getId())
