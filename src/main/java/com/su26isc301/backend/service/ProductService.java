@@ -273,6 +273,10 @@ public class ProductService {
         return mapToProductResponseWithVendorPlan(product, false);
     }
 
+    public ProductResponse mapPublicProduct(Product product) {
+        return mapToProductResponseWithVendorPlan(product, false);
+    }
+
     private ProductResponse mapToProductResponseWithVendorPlan(Product product, boolean revealContact) {
         ProductResponse response = productMapper.mapToProductResponse(product);
         if (response == null || product == null || product.getVendor() == null) {
