@@ -20,6 +20,7 @@ import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,6 +39,7 @@ public class MarketResearchService {
 
     private static final String DEFAULT_CATEGORY_ID = "dt-do-dien-tu";
     private static final int MAX_PRODUCTS_PER_SOURCE = 8;
+    private static final Duration PUBLIC_MARKET_CACHE_TTL = Duration.ofMinutes(30);
     private static final List<String> QUERY_STOP_WORDS = List.of("va", "do", "the", "bi", "may");
     private static final List<String> DEVICE_INTENT_TERMS = List.of(
             "iphone", "ipad", "samsung", "galaxy", "oppo", "xiaomi", "redmi", "realme", "vivo",
@@ -68,6 +71,7 @@ public class MarketResearchService {
     private final ProfileRepository profileRepository;
     private final VendorRepository vendorRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Map<String, CachedMarketResearch> publicMarketCache = new ConcurrentHashMap<>();
 
     public List<MarketResearchResponse.MarketCategoryOption> getCategoryTree() {
         return CATEGORY_TREE;
@@ -100,6 +104,28 @@ public class MarketResearchService {
         return getAdminMarketResearch(categoryId, null, null);
     }
 
+    public MarketResearchResponse getPublicProductMarketResearch(String query, String categoryName) {
+        String selectedName = StringUtils.hasText(categoryName) ? categoryName.trim() : "Sản phẩm";
+        String effectiveQuery = StringUtils.hasText(query) ? query.trim() : selectedName;
+        String cacheKey = normalize(effectiveQuery) + "::" + normalize(selectedName);
+        CachedMarketResearch cached = publicMarketCache.get(cacheKey);
+        if (cached != null && Duration.between(cached.cachedAt(), ZonedDateTime.now()).compareTo(PUBLIC_MARKET_CACHE_TTL) < 0) {
+            return cached.response();
+        }
+
+        List<MarketResearchResponse.MarketCategoryOption> matchedPath = findCategoryPathByName(CATEGORY_TREE, selectedName);
+        MarketResearchResponse.MarketCategoryOption parent = matchedPath.isEmpty()
+                ? CATEGORY_TREE.getFirst()
+                : matchedPath.getFirst();
+        MarketResearchResponse.MarketCategoryOption selected = matchedPath.isEmpty()
+                ? parent
+                : matchedPath.getLast();
+
+        MarketResearchResponse response = buildRealMarketResearch(CATEGORY_TREE, parent, selected.getId(), selectedName, null, effectiveQuery);
+        publicMarketCache.put(cacheKey, new CachedMarketResearch(response, ZonedDateTime.now()));
+        return response;
+    }
+
     private MarketResearchResponse buildRealMarketResearch(
             List<MarketResearchResponse.MarketCategoryOption> categoryTree,
             MarketResearchResponse.MarketCategoryOption parent,
@@ -109,7 +135,7 @@ public class MarketResearchService {
             String query
     ) {
         String effectiveQuery = StringUtils.hasText(query) ? query.trim() : selectedName;
-        List<MarketResearchResponse.PriceSource> sources = SOURCE_TARGETS.stream()
+        List<MarketResearchResponse.PriceSource> sources = SOURCE_TARGETS.parallelStream()
                 .filter(target -> !StringUtils.hasText(source) || normalize(target.name()).equals(normalize(source)))
                 .map(target -> scrapeSource(target, effectiveQuery))
                 .toList();
@@ -616,6 +642,33 @@ public class MarketResearchService {
         return false;
     }
 
+    private List<MarketResearchResponse.MarketCategoryOption> findCategoryPathByName(
+            List<MarketResearchResponse.MarketCategoryOption> nodes,
+            String categoryName
+    ) {
+        if (!StringUtils.hasText(categoryName)) return List.of();
+        List<MarketResearchResponse.MarketCategoryOption> path = new ArrayList<>();
+        return findCategoryPathByName(nodes, normalize(categoryName), path) ? path : List.of();
+    }
+
+    private boolean findCategoryPathByName(
+            List<MarketResearchResponse.MarketCategoryOption> nodes,
+            String normalizedCategoryName,
+            List<MarketResearchResponse.MarketCategoryOption> path
+    ) {
+        for (MarketResearchResponse.MarketCategoryOption node : nodes) {
+            path.add(node);
+            if (normalize(node.getName()).equals(normalizedCategoryName) || normalize(node.getId()).equals(normalizedCategoryName)) {
+                return true;
+            }
+            if (node.getChildren() != null && findCategoryPathByName(node.getChildren(), normalizedCategoryName, path)) {
+                return true;
+            }
+            path.removeLast();
+        }
+        return false;
+    }
+
     private boolean productMatchesQuery(String name, String query) {
         if (!StringUtils.hasText(query)) return true;
         String normalizedName = normalize(name);
@@ -924,5 +977,8 @@ public class MarketResearchService {
     }
 
     private record SourceTarget(String name, String searchUrl, String rootUrl, int trust, String scrapeMode) {
+    }
+
+    private record CachedMarketResearch(MarketResearchResponse response, ZonedDateTime cachedAt) {
     }
 }

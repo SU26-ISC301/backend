@@ -97,9 +97,14 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public ProductResponse getProductById(Long id) {
+        return getProductById(id, false);
+    }
+
+    @Transactional(readOnly = true)
+    public ProductResponse getProductById(Long id, boolean revealContact) {
         Product product = productRepository.findByIdAndIsActiveTrue(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm hoặc sản phẩm đã bị xóa với ID: " + id));
-        return mapToProductResponseWithVendorPlan(product);
+        return mapToProductResponseWithVendorPlan(product, revealContact);
     }
 
     @Transactional(readOnly = true)
@@ -265,10 +270,19 @@ public class ProductService {
     // --- Private Helper Methods (DRY Collection Synchronization & Matching) ---
 
     private ProductResponse mapToProductResponseWithVendorPlan(Product product) {
+        return mapToProductResponseWithVendorPlan(product, false);
+    }
+
+    private ProductResponse mapToProductResponseWithVendorPlan(Product product, boolean revealContact) {
         ProductResponse response = productMapper.mapToProductResponse(product);
         if (response == null || product == null || product.getVendor() == null) {
             return response;
         }
+
+        String profilePhone = product.getVendor().getProfile() != null ? product.getVendor().getProfile().getPhone() : null;
+        String vendorPhone = firstNonBlank(profilePhone, product.getVendor().getPhone());
+        response.setVendorPhoneMasked(maskPhone(vendorPhone));
+        response.setVendorPhone(revealContact ? vendorPhone : response.getVendorPhoneMasked());
 
         subscriptionPlanRepository.findByVendorIdAndIsActiveTrue(product.getVendor().getId())
                 .ifPresent(plan -> {
@@ -286,6 +300,25 @@ public class ProductService {
         }
 
         return response;
+    }
+
+    private String maskPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return null;
+        }
+        String trimmed = phone.trim();
+        int visibleLength = Math.max(0, trimmed.length() - 4);
+        return trimmed.substring(0, visibleLength) + "****";
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) return null;
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private void syncMediaList(Product product, List<ProductCreateRequest.ProductMediaRequest> mediaRequests) {
