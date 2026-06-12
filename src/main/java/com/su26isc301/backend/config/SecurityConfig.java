@@ -52,6 +52,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/identity/cccd/verify").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/identity/cccd/verify-with-face").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/subscription/webhook/payos").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/products").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/products/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/market-research/product").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/products/vendor/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/vendors/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/visits/record").permitAll()
                         .requestMatchers("/api/admin/**").hasAuthority(Roles.admin.name())
                         .requestMatchers(
                                 "/api/auth/**",

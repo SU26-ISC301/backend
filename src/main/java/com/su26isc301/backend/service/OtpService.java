@@ -284,6 +284,7 @@ public class OtpService {
     @Async
     public void sendSubscriptionConfirmationEmail(String toEmail, String shopName, String planType, long amount, int expiryDays) {
         try {
+            int displayExpiryDays = 30;
             String planLabel = "plus".equalsIgnoreCase(planType) ? "Plus" : "Premium";
             String headerGradient = "plus".equalsIgnoreCase(planType) 
                     ? "linear-gradient(135deg,#f97316,#ea580c)" 
@@ -319,7 +320,7 @@ public class OtpService {
                       </div>
                     </body>
                     </html>
-                    """.formatted(headerGradient, planLabel, shopName, planLabel, tableBg, tableBorder, planLabel, amount, expiryDays);
+                    """.formatted(headerGradient, planLabel, shopName, planLabel, tableBg, tableBorder, planLabel, amount, displayExpiryDays);
 
             RestTemplate restTemplate = new RestTemplate();
             HttpHeaders headers = new HttpHeaders();

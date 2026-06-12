@@ -20,6 +20,7 @@ import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,6 +39,7 @@ public class MarketResearchService {
 
     private static final String DEFAULT_CATEGORY_ID = "dt-do-dien-tu";
     private static final int MAX_PRODUCTS_PER_SOURCE = 8;
+    private static final Duration PUBLIC_MARKET_CACHE_TTL = Duration.ofMinutes(30);
     private static final List<String> QUERY_STOP_WORDS = List.of("va", "do", "the", "bi", "may");
     private static final List<String> DEVICE_INTENT_TERMS = List.of(
             "iphone", "ipad", "samsung", "galaxy", "oppo", "xiaomi", "redmi", "realme", "vivo",
@@ -68,6 +71,7 @@ public class MarketResearchService {
     private final ProfileRepository profileRepository;
     private final VendorRepository vendorRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Map<String, CachedMarketResearch> publicMarketCache = new ConcurrentHashMap<>();
 
     public List<MarketResearchResponse.MarketCategoryOption> getCategoryTree() {
         return CATEGORY_TREE;
@@ -100,6 +104,28 @@ public class MarketResearchService {
         return getAdminMarketResearch(categoryId, null, null);
     }
 
+    public MarketResearchResponse getPublicProductMarketResearch(String query, String categoryName) {
+        String selectedName = StringUtils.hasText(categoryName) ? categoryName.trim() : "Sản phẩm";
+        String effectiveQuery = StringUtils.hasText(query) ? query.trim() : selectedName;
+        String cacheKey = normalize(effectiveQuery) + "::" + normalize(selectedName);
+        CachedMarketResearch cached = publicMarketCache.get(cacheKey);
+        if (cached != null && Duration.between(cached.cachedAt(), ZonedDateTime.now()).compareTo(PUBLIC_MARKET_CACHE_TTL) < 0) {
+            return cached.response();
+        }
+
+        List<MarketResearchResponse.MarketCategoryOption> matchedPath = findCategoryPathByName(CATEGORY_TREE, selectedName);
+        MarketResearchResponse.MarketCategoryOption parent = matchedPath.isEmpty()
+                ? CATEGORY_TREE.getFirst()
+                : matchedPath.getFirst();
+        MarketResearchResponse.MarketCategoryOption selected = matchedPath.isEmpty()
+                ? parent
+                : matchedPath.getLast();
+
+        MarketResearchResponse response = buildRealMarketResearch(CATEGORY_TREE, parent, selected.getId(), selectedName, null, effectiveQuery);
+        publicMarketCache.put(cacheKey, new CachedMarketResearch(response, ZonedDateTime.now()));
+        return response;
+    }
+
     private MarketResearchResponse buildRealMarketResearch(
             List<MarketResearchResponse.MarketCategoryOption> categoryTree,
             MarketResearchResponse.MarketCategoryOption parent,
@@ -109,7 +135,7 @@ public class MarketResearchService {
             String query
     ) {
         String effectiveQuery = StringUtils.hasText(query) ? query.trim() : selectedName;
-        List<MarketResearchResponse.PriceSource> sources = SOURCE_TARGETS.stream()
+        List<MarketResearchResponse.PriceSource> sources = SOURCE_TARGETS.parallelStream()
                 .filter(target -> !StringUtils.hasText(source) || normalize(target.name()).equals(normalize(source)))
                 .map(target -> scrapeSource(target, effectiveQuery))
                 .toList();
@@ -616,6 +642,33 @@ public class MarketResearchService {
         return false;
     }
 
+    private List<MarketResearchResponse.MarketCategoryOption> findCategoryPathByName(
+            List<MarketResearchResponse.MarketCategoryOption> nodes,
+            String categoryName
+    ) {
+        if (!StringUtils.hasText(categoryName)) return List.of();
+        List<MarketResearchResponse.MarketCategoryOption> path = new ArrayList<>();
+        return findCategoryPathByName(nodes, normalize(categoryName), path) ? path : List.of();
+    }
+
+    private boolean findCategoryPathByName(
+            List<MarketResearchResponse.MarketCategoryOption> nodes,
+            String normalizedCategoryName,
+            List<MarketResearchResponse.MarketCategoryOption> path
+    ) {
+        for (MarketResearchResponse.MarketCategoryOption node : nodes) {
+            path.add(node);
+            if (normalize(node.getName()).equals(normalizedCategoryName) || normalize(node.getId()).equals(normalizedCategoryName)) {
+                return true;
+            }
+            if (node.getChildren() != null && findCategoryPathByName(node.getChildren(), normalizedCategoryName, path)) {
+                return true;
+            }
+            path.removeLast();
+        }
+        return false;
+    }
+
     private boolean productMatchesQuery(String name, String query) {
         if (!StringUtils.hasText(query)) return true;
         String normalizedName = normalize(name);
@@ -812,19 +865,37 @@ public class MarketResearchService {
                                 option("tai-nghe-co-day", "Tai nghe có dây"),
                                 option("de-sac-khong-day", "Đế sạc không dây")
                         )),
+                        option("camera-nhiep-anh", "Camera & Nhiếp ảnh", false, List.of(
+                                option("may-anh-compact", "Máy ảnh compact"),
+                                option("may-anh-mirrorless", "Máy ảnh mirrorless"),
+                                option("may-anh-dslr", "Máy ảnh DSLR"),
+                                option("camera-hanh-dong", "Camera hành động"),
+                                option("drone", "Drone / Máy bay không người lái"),
+                                option("phu-kien-camera", "Phụ kiện camera")
+                        )),
                         option("am-thanh-video", "Âm thanh & Video", false, List.of(
                                 option("loa-bluetooth", "Loa Bluetooth"),
+                                option("loa-de-ban", "Loa để bàn"),
                                 option("tai-nghe-bluetooth", "Tai nghe Bluetooth"),
-                                option("soundbar", "Soundbar")
+                                option("soundbar", "Soundbar"),
+                                option("micro-thu-am", "Micro & Thu âm")
+                        )),
+                        option("choi-game-console", "Chơi game & Bảng điều khiển", false, List.of(
+                                option("console-tro-choi", "Bảng điều khiển trò chơi video"),
+                                option("console-cam-tay", "Bảng điều khiển cầm tay"),
+                                option("tro-choi-dien-tu", "Trò chơi điện tử"),
+                                option("phu-kien-console", "Phụ kiện bảng điều khiển")
                         )),
                         option("thiet-bi-thong-minh", "Thiết bị thông minh & Thiết bị đeo", false, List.of(
                                 option("dong-ho-thong-minh", "Đồng hồ thông minh"),
                                 option("vong-suc-khoe", "Vòng đeo sức khỏe"),
-                                option("smarthome", "Thiết bị nhà thông minh")
+                                option("smarthome", "Thiết bị nhà thông minh"),
+                                option("den-thong-minh", "Đèn thông minh")
                         )),
                         option("dien-thoai-may-tinh-bang", "Điện thoại & Máy tính bảng", false, List.of(
                                 option("dien-thoai-thong-minh", "Điện thoại thông minh"),
-                                option("may-tinh-bang", "Máy tính bảng")
+                                option("may-tinh-bang", "Máy tính bảng"),
+                                option("dien-thoai-pho-thong", "Điện thoại phổ thông")
                         ))
                 )),
                 option("may-tinh-van-phong", "Máy tính & Thiết bị Văn phòng", false, List.of(
@@ -836,7 +907,25 @@ public class MarketResearchService {
                         option("phu-kien-may-tinh", "Phụ kiện máy tính", false, List.of(
                                 option("ban-phim", "Bàn phím"),
                                 option("chuot-pc", "Chuột máy tính"),
-                                option("man-hinh", "Màn hình")
+                                option("man-hinh", "Màn hình"),
+                                option("tai-nghe-gaming", "Tai nghe Gaming"),
+                                option("webcam", "Webcam"),
+                                option("loa-may-tinh", "Loa máy tính")
+                        )),
+                        option("luu-tru", "Lưu trữ", false, List.of(
+                                option("o-cung-hdd", "Ổ cứng HDD"),
+                                option("o-cung-ssd", "Ổ cứng SSD"),
+                                option("usb-flash-drive", "USB Flash Drive"),
+                                option("the-nho", "Thẻ nhớ"),
+                                option("nas", "NAS / Network Storage")
+                        )),
+                        option("linh-kien-may-tinh", "Linh kiện máy tính", false, List.of(
+                                option("cpu", "CPU / Bộ vi xử lý"),
+                                option("mainboard", "Mainboard / Bo mạch chủ"),
+                                option("ram", "RAM"),
+                                option("card-do-hoa", "Card đồ họa (GPU)"),
+                                option("nguon-may-tinh", "Nguồn máy tính (PSU)"),
+                                option("tan-nhiet", "Tản nhiệt")
                         ))
                 )),
                 option("thiet-bi-mang", "Thiết bị mạng", false, List.of(
@@ -855,6 +944,11 @@ public class MarketResearchService {
                                 option("android-tv", "Android TV"),
                                 option("qled-tv", "QLED TV"),
                                 option("oled-tv", "OLED TV")
+                        )),
+                        option("dau-phat-streaming", "Đầu phát trực tuyến", false, List.of(
+                                option("android-tv-box", "Android TV Box"),
+                                option("chromecast", "Google Chromecast"),
+                                option("fire-stick", "Amazon Fire Stick")
                         )),
                         option("may-chieu", "Máy chiếu", false, List.of(
                                 option("projector-mini", "Máy chiếu mini"),
@@ -883,5 +977,8 @@ public class MarketResearchService {
     }
 
     private record SourceTarget(String name, String searchUrl, String rootUrl, int trust, String scrapeMode) {
+    }
+
+    private record CachedMarketResearch(MarketResearchResponse response, ZonedDateTime cachedAt) {
     }
 }

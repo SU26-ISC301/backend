@@ -14,6 +14,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     List<Product> findByCategoryId(Long categoryId);
     
     Optional<Product> findByIdAndIsActiveTrue(Long id);
+    List<Product> findByIsActiveTrueOrderByCreatedAtDesc();
+    List<Product> findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(String status);
     List<Product> findByVendorIdAndIsActiveTrue(Long vendorId);
     boolean existsBySlug(String slug);
 }
