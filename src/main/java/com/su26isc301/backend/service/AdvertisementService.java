@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -37,8 +38,8 @@ public class AdvertisementService {
     private final PayOSService payOSService;
 
     @Transactional
-    public ProductAdResponse createProductAd(String vendorIdStr, ProductAdCreateRequest request) {
-        Vendor vendor = vendorRepository.findByProfileId(java.util.UUID.fromString(vendorIdStr))
+    public ProductAdResponse createProductAd(String email, ProductAdCreateRequest request) {
+        Vendor vendor = vendorRepository.findByProfileEmail(email)
                 .orElseThrow(() -> new RuntimeException("Vendor not found"));
 
         Product product = productRepository.findById(request.getProductId())
@@ -82,8 +83,8 @@ public class AdvertisementService {
     }
 
     @Transactional
-    public BannerResponse createBanner(String vendorIdStr, BannerCreateRequest request) {
-        Vendor vendor = vendorRepository.findByProfileId(java.util.UUID.fromString(vendorIdStr))
+    public BannerResponse createBanner(String email, BannerCreateRequest request) {
+        Vendor vendor = vendorRepository.findByProfileEmail(email)
                 .orElseThrow(() -> new RuntimeException("Vendor not found"));
 
         ZonedDateTime now = ZonedDateTime.now();
@@ -118,14 +119,14 @@ public class AdvertisementService {
         return mapToBannerResponse(banner);
     }
 
-    public Page<ProductAdResponse> getVendorProductAds(String vendorIdStr, Pageable pageable) {
-        Vendor vendor = vendorRepository.findByProfileId(java.util.UUID.fromString(vendorIdStr))
+    public Page<ProductAdResponse> getVendorProductAds(String email, Pageable pageable) {
+        Vendor vendor = vendorRepository.findByProfileEmail(email)
                 .orElseThrow(() -> new RuntimeException("Vendor not found"));
         return productAdRepository.findByVendorId(vendor.getId(), pageable).map(this::mapToProductAdResponse);
     }
 
-    public Page<BannerResponse> getVendorBanners(String vendorIdStr, Pageable pageable) {
-        Vendor vendor = vendorRepository.findByProfileId(java.util.UUID.fromString(vendorIdStr))
+    public Page<BannerResponse> getVendorBanners(String email, Pageable pageable) {
+        Vendor vendor = vendorRepository.findByProfileEmail(email)
                 .orElseThrow(() -> new RuntimeException("Vendor not found"));
         return bannerRepository.findByVendorId(vendor.getId(), pageable).map(this::mapToBannerResponse);
     }

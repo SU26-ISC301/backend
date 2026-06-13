@@ -27,8 +27,8 @@ public class AdvertisementController {
     public ResponseEntity<ApiResponse<ProductAdResponse>> createProductAd(
             Authentication authentication,
             @Valid @RequestBody ProductAdCreateRequest request) {
-        String vendorProfileId = String.valueOf(authentication.getPrincipal());
-        ProductAdResponse response = advertisementService.createProductAd(vendorProfileId, request);
+        String email = String.valueOf(authentication.getPrincipal());
+        ProductAdResponse response = advertisementService.createProductAd(email, request);
         return ResponseEntity.ok(ApiResponse.success("Product ad registered successfully", response));
     }
 
@@ -38,8 +38,8 @@ public class AdvertisementController {
             Authentication authentication,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        String vendorProfileId = String.valueOf(authentication.getPrincipal());
-        Page<ProductAdResponse> response = advertisementService.getVendorProductAds(vendorProfileId, PageRequest.of(page, size));
+        String email = String.valueOf(authentication.getPrincipal());
+        Page<ProductAdResponse> response = advertisementService.getVendorProductAds(email, PageRequest.of(page, size));
         return ResponseEntity.ok(ApiResponse.success("Retrieved product ads successfully", response));
     }
 
@@ -48,8 +48,8 @@ public class AdvertisementController {
     public ResponseEntity<ApiResponse<BannerResponse>> createBanner(
             Authentication authentication,
             @Valid @RequestBody BannerCreateRequest request) {
-        String vendorProfileId = String.valueOf(authentication.getPrincipal());
-        BannerResponse response = advertisementService.createBanner(vendorProfileId, request);
+        String email = String.valueOf(authentication.getPrincipal());
+        BannerResponse response = advertisementService.createBanner(email, request);
         return ResponseEntity.ok(ApiResponse.success("Banner registered successfully", response));
     }
 
@@ -59,8 +59,8 @@ public class AdvertisementController {
             Authentication authentication,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        String vendorProfileId = String.valueOf(authentication.getPrincipal());
-        Page<BannerResponse> response = advertisementService.getVendorBanners(vendorProfileId, PageRequest.of(page, size));
+        String email = String.valueOf(authentication.getPrincipal());
+        Page<BannerResponse> response = advertisementService.getVendorBanners(email, PageRequest.of(page, size));
         return ResponseEntity.ok(ApiResponse.success("Retrieved banners successfully", response));
     }
 }

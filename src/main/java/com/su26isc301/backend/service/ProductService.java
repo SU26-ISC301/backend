@@ -90,7 +90,7 @@ public class ProductService {
 
         Product savedProduct = productRepository.save(product);
         if (consumesSlot) {
-            subscriptionService.consumeOneSlot(vendor.getId());
+            subscriptionService.consumeOneSlot(vendor.getId(), savedProduct.getId());
         }
         return mapToProductResponseWithVendorPlan(savedProduct);
     }
@@ -209,7 +209,7 @@ public class ProductService {
 
         Product savedProduct = productRepository.save(product);
         if (consumesSlot) {
-            subscriptionService.consumeOneSlot(product.getVendor().getId());
+            subscriptionService.consumeOneSlot(product.getVendor().getId(), savedProduct.getId());
         }
         return mapToProductResponseWithVendorPlan(savedProduct);
     }
@@ -254,6 +254,7 @@ public class ProductService {
         product.setStatus(ProductStatus.REJECTED.getValue());
         product.setRejectReason(reason);
         Product saved = productRepository.save(product);
+        subscriptionService.refundOneSlot(product.getVendor().getId(), saved.getId(), reason);
         return mapToProductResponseWithVendorPlan(saved);
     }
 

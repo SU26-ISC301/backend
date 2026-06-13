@@ -8,6 +8,7 @@ import com.su26isc301.backend.entity.Vendor;
 import com.su26isc301.backend.repository.VendorRepository;
 import com.su26isc301.backend.service.SubscriptionService;
 import com.su26isc301.backend.service.AdvertisementService;
+import com.su26isc301.backend.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,7 @@ public class SubscriptionController {
 
     private final SubscriptionService subscriptionService;
     private final AdvertisementService advertisementService;
+    private final WalletService walletService;
     private final VendorRepository vendorRepository;
 
     /**
@@ -87,6 +89,7 @@ public class SubscriptionController {
             log.info("📥 PayOS webhook nhận được: {}", webhookData);
             subscriptionService.handlePayOSWebhook(webhookData);
             advertisementService.handlePayOSWebhook(webhookData);
+            walletService.handlePayOSWebhook(webhookData);
             return ResponseEntity.ok(Map.of("code", "00", "desc", "success"));
         } catch (Exception e) {
             log.error("Lỗi xử lý PayOS webhook", e);
@@ -103,7 +106,7 @@ public class SubscriptionController {
     public ResponseEntity<ApiResponse<Void>> useSlot(Authentication authentication) {
         try {
             Long vendorId = resolveVendorId(authentication);
-            subscriptionService.consumeOneSlot(vendorId);
+            subscriptionService.consumeOneSlot(vendorId, null);
             return ResponseEntity.ok(ApiResponse.success("Đã sử dụng 1 lượt đăng tin", null));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));

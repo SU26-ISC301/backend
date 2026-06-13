@@ -70,4 +70,8 @@ public class Vendor {
 
     @Column(name = "face_image_url")
     private String faceImageUrl;
+
+    @Column(name = "promotional_balance")
+    @Builder.Default
+    private BigDecimal promotionalBalance = BigDecimal.ZERO;
 }

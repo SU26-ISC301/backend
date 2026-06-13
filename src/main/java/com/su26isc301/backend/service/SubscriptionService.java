@@ -8,6 +8,10 @@ import com.su26isc301.backend.entity.VendorSubscriptionTransaction;
 import com.su26isc301.backend.repository.VendorRepository;
 import com.su26isc301.backend.repository.VendorSubscriptionPlanRepository;
 import com.su26isc301.backend.repository.VendorSubscriptionTransactionRepository;
+import com.su26isc301.backend.repository.SubscriptionQuotaTransactionRepository;
+import com.su26isc301.backend.repository.ProductRepository;
+import com.su26isc301.backend.entity.Product;
+import com.su26isc301.backend.entity.SubscriptionQuotaTransaction;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.su26isc301.backend.service.AuditLogService;
@@ -50,6 +54,8 @@ public class SubscriptionService {
     private final VendorRepository vendorRepository;
     private final VendorSubscriptionPlanRepository planRepository;
     private final VendorSubscriptionTransactionRepository transactionRepository;
+    private final SubscriptionQuotaTransactionRepository quotaTransactionRepository;
+    private final ProductRepository productRepository;
     private final PayOSService payOSService;
     private final OtpService otpService;
     private final AuditLogService auditLogService;
@@ -117,7 +123,7 @@ public class SubscriptionService {
     // ─── 4. Trừ 1 lượt đăng tin ──────────────────────────────────────────────
 
     @Transactional
-    public void consumeOneSlot(Long vendorId) {
+    public void consumeOneSlot(Long vendorId, Long productId) {
         VendorSubscriptionPlan plan = planRepository.findByVendorId(vendorId)
                 .orElseGet(() -> getOrCreateFreePlan(vendorId));
         plan = normalizePlanForCurrentCycle(plan);
@@ -129,6 +135,48 @@ public class SubscriptionService {
         }
         plan.setUsedSlots(plan.getUsedSlots() + 1);
         planRepository.save(plan);
+
+        Product product = null;
+        if (productId != null) {
+            product = productRepository.findById(productId).orElse(null);
+        }
+
+        SubscriptionQuotaTransaction logTx = SubscriptionQuotaTransaction.builder()
+                .vendor(plan.getVendor())
+                .product(product)
+                .changeAmount(-1)
+                .reason("SUBMIT_POST")
+                .balanceAfter(plan.getTotalSlots() - plan.getUsedSlots())
+                .build();
+        quotaTransactionRepository.save(logTx);
+    }
+
+    @Transactional
+    public void refundOneSlot(Long vendorId, Long productId, String reason) {
+        VendorSubscriptionPlan plan = planRepository.findByVendorId(vendorId)
+                .orElseGet(() -> getOrCreateFreePlan(vendorId));
+        plan = normalizePlanForCurrentCycle(plan);
+
+        if (plan.getTotalSlots() == -1) return; // unlimited
+
+        if (plan.getUsedSlots() > 0) {
+            plan.setUsedSlots(plan.getUsedSlots() - 1);
+            planRepository.save(plan);
+
+            Product product = null;
+            if (productId != null) {
+                product = productRepository.findById(productId).orElse(null);
+            }
+
+            SubscriptionQuotaTransaction logTx = SubscriptionQuotaTransaction.builder()
+                    .vendor(plan.getVendor())
+                    .product(product)
+                    .changeAmount(1)
+                    .reason(reason != null ? reason : "REFUND_REJECTED")
+                    .balanceAfter(plan.getTotalSlots() - plan.getUsedSlots())
+                    .build();
+            quotaTransactionRepository.save(logTx);
+        }
     }
 
     // ─── 5. Tạo link thanh toán PayOS ────────────────────────────────────────
