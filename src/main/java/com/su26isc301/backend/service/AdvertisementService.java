@@ -35,7 +35,7 @@ public class AdvertisementService {
     private final BannerRepository bannerRepository;
     private final ProductRepository productRepository;
     private final VendorRepository vendorRepository;
-    private final PayOSService payOSService;
+    private final WalletService walletService;
 
     @Transactional
     public ProductAdResponse createProductAd(String email, ProductAdCreateRequest request) {
@@ -60,24 +60,13 @@ public class AdvertisementService {
                 .dailyBudget(dailyBudget)
                 .startDate(now)
                 .endDate(now.plusDays(request.getDays()))
-                .status("PENDING")
+                .status("ACTIVE")
                 .build();
 
         productAd = productAdRepository.save(productAd);
 
-        // Generate PayOS payment link
-        long orderCode = Math.abs(System.currentTimeMillis() % 1_000_000_000L)
-                + java.util.concurrent.ThreadLocalRandom.current().nextLong(1, 1000);
-        String paymentRef = String.valueOf(orderCode);
-        productAd.setPaymentRef(paymentRef);
-
-        String paymentUrl = payOSService.createPaymentLink(
-                orderCode,
-                request.getTotalAmount().longValue(),
-                "Thanh toan Quang cao"
-        );
-        productAd.setPaymentUrl(paymentUrl);
-        productAdRepository.save(productAd);
+        // Deduct from wallet
+        walletService.deductForProductAd(vendor.getId(), request.getTotalAmount(), productAd.getId());
 
         return mapToProductAdResponse(productAd);
     }
@@ -97,24 +86,13 @@ public class AdvertisementService {
                 .pricePaid(request.getTotalAmount())
                 .startDate(now)
                 .endDate(now.plusDays(request.getDays()))
-                .status("PENDING")
+                .status("ACTIVE")
                 .build();
 
         banner = bannerRepository.save(banner);
 
-        // Generate PayOS payment link
-        long orderCode = Math.abs(System.currentTimeMillis() % 1_000_000_000L)
-                + java.util.concurrent.ThreadLocalRandom.current().nextLong(1001, 2000);
-        String paymentRef = String.valueOf(orderCode);
-        banner.setPaymentRef(paymentRef);
-
-        String paymentUrl = payOSService.createPaymentLink(
-                orderCode,
-                request.getTotalAmount().longValue(),
-                "Thanh toan Banner"
-        );
-        banner.setPaymentUrl(paymentUrl);
-        bannerRepository.save(banner);
+        // Deduct from wallet
+        walletService.deductForBanner(vendor.getId(), request.getTotalAmount(), banner.getId());
 
         return mapToBannerResponse(banner);
     }
@@ -173,53 +151,5 @@ public class AdvertisementService {
                 .paymentUrl(banner.getPaymentUrl())
                 .createdAt(banner.getCreatedAt())
                 .build();
-    }
-
-    @Transactional
-    public boolean handlePayOSWebhook(Map<String, Object> webhookData) {
-        // We assume signature is already verified by the caller (e.g. SubscriptionController or WebhookDispatcher)
-        Map<String, Object> data = castToMap(webhookData.get("data"));
-        if (data == null) return false;
-
-        String orderCode = String.valueOf(data.get("orderCode"));
-        String payosStatus = (String) data.get("status"); // PAID | CANCELLED | EXPIRED
-
-        boolean handled = false;
-
-        // Try ProductAd
-        ProductAd productAd = productAdRepository.findByPaymentRef(orderCode).orElse(null);
-        if (productAd != null && "PENDING".equals(productAd.getStatus())) {
-            if ("PAID".equals(payosStatus)) {
-                productAd.setStatus("ACTIVE");
-                productAdRepository.save(productAd);
-            } else if ("CANCELLED".equals(payosStatus) || "EXPIRED".equals(payosStatus)) {
-                productAd.setStatus(payosStatus);
-                productAdRepository.save(productAd);
-            }
-            handled = true;
-        }
-
-        // Try Banner
-        Banner banner = bannerRepository.findByPaymentRef(orderCode).orElse(null);
-        if (banner != null && "PENDING".equals(banner.getStatus())) {
-            if ("PAID".equals(payosStatus)) {
-                banner.setStatus("ACTIVE");
-                bannerRepository.save(banner);
-            } else if ("CANCELLED".equals(payosStatus) || "EXPIRED".equals(payosStatus)) {
-                banner.setStatus(payosStatus);
-                bannerRepository.save(banner);
-            }
-            handled = true;
-        }
-
-        return handled;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> castToMap(Object obj) {
-        if (obj instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
-        }
-        return null;
     }
 }

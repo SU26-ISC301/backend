@@ -7,7 +7,6 @@ import com.su26isc301.backend.dto.response.SubscriptionStatusResponse;
 import com.su26isc301.backend.entity.Vendor;
 import com.su26isc301.backend.repository.VendorRepository;
 import com.su26isc301.backend.service.SubscriptionService;
-import com.su26isc301.backend.service.AdvertisementService;
 import com.su26isc301.backend.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +24,6 @@ import java.util.UUID;
 public class SubscriptionController {
 
     private final SubscriptionService subscriptionService;
-    private final AdvertisementService advertisementService;
     private final WalletService walletService;
     private final VendorRepository vendorRepository;
 
@@ -88,7 +86,6 @@ public class SubscriptionController {
         try {
             log.info("📥 PayOS webhook nhận được: {}", webhookData);
             subscriptionService.handlePayOSWebhook(webhookData);
-            advertisementService.handlePayOSWebhook(webhookData);
             walletService.handlePayOSWebhook(webhookData);
             return ResponseEntity.ok(Map.of("code", "00", "desc", "success"));
         } catch (Exception e) {

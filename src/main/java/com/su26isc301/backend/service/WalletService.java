@@ -182,4 +182,49 @@ public class WalletService {
                 .build();
         transactionRepository.save(transaction);
     }
+    @Transactional
+    public void deductForProductAd(Long vendorId, BigDecimal amount, Long productAdId) {
+        Vendor vendor = vendorRepository.findById(vendorId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
+        BigDecimal currentBalance = vendor.getPromotionalBalance() != null ? vendor.getPromotionalBalance() : BigDecimal.ZERO;
+        
+        if (currentBalance.compareTo(amount) < 0) {
+            throw new RuntimeException("Số dư ví không đủ để đăng ký quảng cáo. Vui lòng nạp thêm tiền vào ví.");
+        }
+        
+        vendor.setPromotionalBalance(currentBalance.subtract(amount));
+        vendorRepository.save(vendor);
+        
+        WalletTransaction transaction = WalletTransaction.builder()
+                .vendor(vendor)
+                .amount(amount.negate())
+                .transactionType("DEDUCTION")
+                .productAdId(productAdId)
+                .status("SUCCESS")
+                .build();
+        transactionRepository.save(transaction);
+    }
+    
+    @Transactional
+    public void deductForBanner(Long vendorId, BigDecimal amount, Long bannerId) {
+        Vendor vendor = vendorRepository.findById(vendorId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
+        BigDecimal currentBalance = vendor.getPromotionalBalance() != null ? vendor.getPromotionalBalance() : BigDecimal.ZERO;
+        
+        if (currentBalance.compareTo(amount) < 0) {
+            throw new RuntimeException("Số dư ví không đủ để đăng ký Banner. Vui lòng nạp thêm tiền vào ví.");
+        }
+        
+        vendor.setPromotionalBalance(currentBalance.subtract(amount));
+        vendorRepository.save(vendor);
+        
+        WalletTransaction transaction = WalletTransaction.builder()
+                .vendor(vendor)
+                .amount(amount.negate())
+                .transactionType("DEDUCTION")
+                .bannerId(bannerId)
+                .status("SUCCESS")
+                .build();
+        transactionRepository.save(transaction);
+    }
 }

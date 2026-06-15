@@ -45,6 +45,12 @@ public class WalletTransaction {
     @Column(name = "promotion_id")
     private Long promotionId;
 
+    @Column(name = "product_ad_id")
+    private Long productAdId;
+
+    @Column(name = "banner_id")
+    private Long bannerId;
+
     /**
      * PENDING, SUCCESS, FAILED
      */
