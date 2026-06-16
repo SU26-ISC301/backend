@@ -45,6 +45,29 @@ public class PostPromotion {
     @Column(name = "end_date", nullable = false)
     private ZonedDateTime endDate;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "wallet_id")
+    private VendorWallet wallet;
+
+    @Column(name = "roi_per_click", nullable = false)
+    private BigDecimal roiPerClick;
+
+    @Column(name = "estimated_clicks", nullable = false)
+    private Integer estimatedClicks;
+
+    @Column(name = "customer_clicks", nullable = false)
+    @Builder.Default
+    private Integer customerClicks = 0;
+
+    @Column(name = "reserve_transaction_id")
+    private Long reserveTransactionId;
+
+    @Column(name = "stopped_at")
+    private ZonedDateTime stoppedAt;
+
+    @Column(name = "stop_reason")
+    private String stopReason;
+
     /**
      * DRAFT | ACTIVE | PAUSED | EXHAUSTED | COMPLETED | CANCELLED
      */

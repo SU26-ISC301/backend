@@ -30,7 +30,7 @@ public class PromotionController {
         try {
             Long vendorId = resolveVendorId(authentication);
             PostPromotion promo = promotionService.createPromotion(
-                    vendorId, request.getProductId(), request.getDays(), request.getBudget());
+                    vendorId, request.getProductId(), request.getPromotionAmount(), request.getRoiPerClick(), request.getStartDate(), request.getEndDate());
             return ResponseEntity.ok(ApiResponse.success("Tạo chiến dịch quảng cáo thành công", promo.getId()));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
@@ -53,8 +53,24 @@ public class PromotionController {
             Authentication authentication,
             @RequestBody ClickPromotionRequest request) {
         java.util.UUID viewerId = resolveViewerId(authentication);
-        promotionService.recordClick(id, request.getSessionId(), viewerId);
+        promotionService.recordClick(id, request.getSessionId(), viewerId, request.getSurface());
         return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/stop")
+    public ResponseEntity<ApiResponse<PostPromotion>> stopPromotion(
+            @PathVariable Long id,
+            Authentication authentication,
+            @RequestBody java.util.Map<String, Object> request) {
+        try {
+            Long vendorId = resolveVendorId(authentication);
+            boolean confirm = request.containsKey("confirm") && (boolean) request.get("confirm");
+            String reason = request.containsKey("reason") ? request.get("reason").toString() : null;
+            PostPromotion promo = promotionService.stopPromotion(id, vendorId, confirm, reason);
+            return ResponseEntity.ok(ApiResponse.success("Dừng chiến dịch thành công", promo));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
     }
 
     private Long resolveVendorId(Authentication authentication) {

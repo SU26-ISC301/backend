@@ -28,8 +28,16 @@ public class WalletController {
     @GetMapping("/balance")
     public ResponseEntity<ApiResponse<WalletBalanceResponse>> getBalance(Authentication authentication) {
         Long vendorId = resolveVendorId(authentication);
-        BigDecimal balance = walletService.getBalance(vendorId);
-        return ResponseEntity.ok(ApiResponse.success("Lấy số dư thành công", WalletBalanceResponse.builder().balance(balance).build()));
+        com.su26isc301.backend.entity.VendorWallet wallet = walletService.getOrCreateWallet(vendorId);
+        WalletBalanceResponse response = WalletBalanceResponse.builder()
+                .vendorId(wallet.getVendor().getId())
+                .currency(wallet.getCurrency())
+                .availableBalance(wallet.getAvailableBalance())
+                .lockedBalance(wallet.getLockedBalance())
+                .totalDeposited(wallet.getTotalDeposited())
+                .totalSpent(wallet.getTotalSpent())
+                .build();
+        return ResponseEntity.ok(ApiResponse.success("Lấy số dư thành công", response));
     }
 
     @PostMapping("/top-up")

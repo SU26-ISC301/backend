@@ -2,8 +2,12 @@ package com.su26isc301.backend.service;
 
 import com.su26isc301.backend.dto.response.PaymentLinkResponse;
 import com.su26isc301.backend.entity.Vendor;
+import com.su26isc301.backend.entity.VendorWallet;
+import com.su26isc301.backend.entity.WalletTopupOrder;
 import com.su26isc301.backend.entity.WalletTransaction;
 import com.su26isc301.backend.repository.VendorRepository;
+import com.su26isc301.backend.repository.VendorWalletRepository;
+import com.su26isc301.backend.repository.WalletTopupOrderRepository;
 import com.su26isc301.backend.repository.WalletTransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.ZonedDateTime;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -20,13 +26,31 @@ import java.util.concurrent.ThreadLocalRandom;
 public class WalletService {
 
     private final VendorRepository vendorRepository;
+    private final VendorWalletRepository walletRepository;
+    private final WalletTopupOrderRepository topupOrderRepository;
     private final WalletTransactionRepository transactionRepository;
     private final PayOSService payOSService;
 
+    @Transactional
+    public VendorWallet getOrCreateWallet(Long vendorId) {
+        return walletRepository.findByVendorId(vendorId).orElseGet(() -> {
+            Vendor vendor = vendorRepository.findById(vendorId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
+            VendorWallet wallet = VendorWallet.builder()
+                    .vendor(vendor)
+                    .availableBalance(BigDecimal.ZERO)
+                    .lockedBalance(BigDecimal.ZERO)
+                    .totalDeposited(BigDecimal.ZERO)
+                    .totalSpent(BigDecimal.ZERO)
+                    .currency("VND")
+                    .status("ACTIVE")
+                    .build();
+            return walletRepository.save(wallet);
+        });
+    }
+
     public BigDecimal getBalance(Long vendorId) {
-        Vendor vendor = vendorRepository.findById(vendorId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
-        return vendor.getPromotionalBalance() != null ? vendor.getPromotionalBalance() : BigDecimal.ZERO;
+        return getOrCreateWallet(vendorId).getAvailableBalance();
     }
 
     @Transactional
@@ -38,39 +62,38 @@ public class WalletService {
         Vendor vendor = vendorRepository.findById(vendorId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
 
-        long orderCode = Math.abs(System.currentTimeMillis() % 1_000_000_000L)
+        long orderCodeNumber = Math.abs(System.currentTimeMillis() % 1_000_000_000L)
                 + ThreadLocalRandom.current().nextLong(1, 100);
+        String orderCode = String.valueOf(orderCodeNumber);
 
-        String description = "Nap vi " + vendor.getShopName();
-        if (description.length() > 25) {
-            description = description.substring(0, 25);
-        }
-
-        WalletTransaction transaction = WalletTransaction.builder()
+        WalletTopupOrder order = WalletTopupOrder.builder()
+                .orderCode(orderCode)
                 .vendor(vendor)
                 .amount(amount)
-                .transactionType("TOP_UP")
-                .paymentRef(String.valueOf(orderCode))
-                .status("PENDING")
+                .paymentMethod(paymentMethod != null ? paymentMethod : "payos")
+                .status("PENDING_PAYMENT")
                 .build();
-        transaction = transactionRepository.save(transaction);
+        order = topupOrderRepository.save(order);
 
         String paymentUrl;
-        if ("payos".equalsIgnoreCase(paymentMethod) || paymentMethod == null) {
-            paymentUrl = payOSService.createPaymentLink(orderCode, amount.longValue(), description);
+        if ("payos".equalsIgnoreCase(order.getPaymentMethod())) {
+            String description = "Nap vi " + vendor.getShopName();
+            if (description.length() > 25) {
+                description = description.substring(0, 25);
+            }
+            paymentUrl = payOSService.createPaymentLink(orderCodeNumber, amount.longValue(), description);
+            order.setPaymentUrl(paymentUrl);
+            topupOrderRepository.save(order);
         } else {
             paymentUrl = null;
         }
 
-        transaction.setPaymentUrl(paymentUrl);
-        transactionRepository.save(transaction);
-
         return PaymentLinkResponse.builder()
                 .paymentUrl(paymentUrl)
-                .orderCode(String.valueOf(orderCode))
+                .orderCode(orderCode)
                 .amount(amount.longValue())
                 .planType("top_up")
-                .transactionId(transaction.getId())
+                .transactionId(order.getId())
                 .build();
     }
 
@@ -83,148 +106,148 @@ public class WalletService {
         String orderCode = String.valueOf(data.get("orderCode"));
         String payosStatus = (String) data.get("status");
 
-        WalletTransaction transaction = transactionRepository.findByPaymentRefWithLock(orderCode)
-                .orElse(null);
-        
-        if (transaction == null || !"TOP_UP".equals(transaction.getTransactionType())) {
-            return;
-        }
-
-        if (!"PENDING".equals(transaction.getStatus())) {
+        WalletTopupOrder order = topupOrderRepository.findByOrderCodeForUpdate(orderCode).orElse(null);
+        if (order == null || !"PENDING_PAYMENT".equals(order.getStatus())) {
             return;
         }
 
         if ("PAID".equals(payosStatus)) {
-            activateTopUp(transaction);
+            activateTopUp(order);
         } else if ("CANCELLED".equals(payosStatus) || "EXPIRED".equals(payosStatus)) {
-            transaction.setStatus("FAILED");
-            transactionRepository.save(transaction);
+            order.setStatus("FAILED");
+            topupOrderRepository.save(order);
         }
     }
 
     @Transactional
     public String checkPaymentResult(String orderCode, Long vendorId) {
-        WalletTransaction transaction = transactionRepository.findByPaymentRefWithLock(orderCode)
+        WalletTopupOrder order = topupOrderRepository.findByOrderCodeForUpdate(orderCode)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy giao dịch nạp tiền"));
 
-        if (!transaction.getVendor().getId().equals(vendorId)) {
+        if (!order.getVendor().getId().equals(vendorId)) {
             throw new RuntimeException("Không có quyền truy cập giao dịch này");
         }
 
-        if ("SUCCESS".equals(transaction.getStatus())) return "paid";
-        if ("FAILED".equals(transaction.getStatus())) return "cancelled";
+        if ("SUCCESS".equals(order.getStatus())) return "paid";
+        if ("FAILED".equals(order.getStatus()) || "CANCELLED".equals(order.getStatus())) return "cancelled";
 
-        String payosStatus = payOSService.getPaymentStatus(Long.parseLong(orderCode));
-        if ("PAID".equals(payosStatus)) {
-            activateTopUp(transaction);
-            return "paid";
-        } else if ("CANCELLED".equals(payosStatus) || "EXPIRED".equals(payosStatus)) {
-            transaction.setStatus("FAILED");
-            transactionRepository.save(transaction);
-            return "cancelled";
+        if ("payos".equalsIgnoreCase(order.getPaymentMethod())) {
+            String payosStatus = payOSService.getPaymentStatus(Long.parseLong(orderCode));
+            if ("PAID".equals(payosStatus)) {
+                activateTopUp(order);
+                return "paid";
+            } else if ("CANCELLED".equals(payosStatus) || "EXPIRED".equals(payosStatus)) {
+                order.setStatus("FAILED");
+                topupOrderRepository.save(order);
+                return "cancelled";
+            }
         }
-
         return "pending";
     }
 
     @Transactional
-    protected void activateTopUp(WalletTransaction transaction) {
-        if ("SUCCESS".equals(transaction.getStatus())) return;
+    protected void activateTopUp(WalletTopupOrder order) {
+        if ("SUCCESS".equals(order.getStatus())) return;
 
-        transaction.setStatus("SUCCESS");
-        transactionRepository.save(transaction);
+        VendorWallet wallet = walletRepository.findByVendorIdForUpdate(order.getVendor().getId())
+                .orElseGet(() -> getOrCreateWallet(order.getVendor().getId()));
 
-        Vendor vendor = transaction.getVendor();
-        BigDecimal currentBalance = vendor.getPromotionalBalance() != null ? vendor.getPromotionalBalance() : BigDecimal.ZERO;
-        vendor.setPromotionalBalance(currentBalance.add(transaction.getAmount()));
-        vendorRepository.save(vendor);
-        log.info("✅ Nạp thành công {} VNĐ vào ví của Vendor {}", transaction.getAmount(), vendor.getId());
-    }
+        BigDecimal availableBefore = wallet.getAvailableBalance();
+        BigDecimal lockedBefore = wallet.getLockedBalance();
 
-    @Transactional
-    public void deductBudget(Long vendorId, BigDecimal amount, Long promotionId) {
-        Vendor vendor = vendorRepository.findById(vendorId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
-        BigDecimal currentBalance = vendor.getPromotionalBalance() != null ? vendor.getPromotionalBalance() : BigDecimal.ZERO;
-        
-        if (currentBalance.compareTo(amount) < 0) {
-            throw new RuntimeException("Số dư ví không đủ để chạy chiến dịch");
-        }
-        
-        vendor.setPromotionalBalance(currentBalance.subtract(amount));
-        vendorRepository.save(vendor);
-        
-        WalletTransaction transaction = WalletTransaction.builder()
-                .vendor(vendor)
-                .amount(amount.negate())
-                .transactionType("DEDUCTION")
-                .promotionId(promotionId)
-                .status("SUCCESS")
+        wallet.setAvailableBalance(wallet.getAvailableBalance().add(order.getAmount()));
+        wallet.setTotalDeposited(wallet.getTotalDeposited().add(order.getAmount()));
+        walletRepository.save(wallet);
+
+        order.setStatus("SUCCESS");
+        order.setPaidAt(ZonedDateTime.now());
+        topupOrderRepository.save(order);
+
+        WalletTransaction tx = WalletTransaction.builder()
+                .wallet(wallet)
+                .vendor(order.getVendor())
+                .transactionCode("WLT-" + UUID.randomUUID().toString())
+                .amount(order.getAmount())
+                .type("TOP_UP")
+                .availableBefore(availableBefore)
+                .availableAfter(wallet.getAvailableBalance())
+                .lockedBefore(lockedBefore)
+                .lockedAfter(wallet.getLockedBalance())
+                .referenceType("TOPUP_ORDER")
+                .referenceId(order.getId())
                 .build();
-        transactionRepository.save(transaction);
+        transactionRepository.save(tx);
+
+        log.info("✅ Nạp thành công {} VNĐ vào ví của Vendor {}", order.getAmount(), order.getVendor().getId());
     }
-    
-    @Transactional
-    public void refundBudget(Long vendorId, BigDecimal amount, Long promotionId) {
-        Vendor vendor = vendorRepository.findById(vendorId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
-        BigDecimal currentBalance = vendor.getPromotionalBalance() != null ? vendor.getPromotionalBalance() : BigDecimal.ZERO;
-        
-        vendor.setPromotionalBalance(currentBalance.add(amount));
-        vendorRepository.save(vendor);
-        
-        WalletTransaction transaction = WalletTransaction.builder()
-                .vendor(vendor)
-                .amount(amount)
-                .transactionType("REFUND")
-                .promotionId(promotionId)
-                .status("SUCCESS")
-                .build();
-        transactionRepository.save(transaction);
-    }
+
+    // For backwards compatibility with Banner and ProductAd deductions
     @Transactional
     public void deductForProductAd(Long vendorId, BigDecimal amount, Long productAdId) {
-        Vendor vendor = vendorRepository.findById(vendorId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
-        BigDecimal currentBalance = vendor.getPromotionalBalance() != null ? vendor.getPromotionalBalance() : BigDecimal.ZERO;
-        
-        if (currentBalance.compareTo(amount) < 0) {
-            throw new RuntimeException("Số dư ví không đủ để đăng ký quảng cáo. Vui lòng nạp thêm tiền vào ví.");
-        }
-        
-        vendor.setPromotionalBalance(currentBalance.subtract(amount));
-        vendorRepository.save(vendor);
-        
-        WalletTransaction transaction = WalletTransaction.builder()
-                .vendor(vendor)
-                .amount(amount.negate())
-                .transactionType("DEDUCTION")
-                .productAdId(productAdId)
-                .status("SUCCESS")
-                .build();
-        transactionRepository.save(transaction);
+        deductGeneric(vendorId, amount, "PRODUCT_AD", productAdId);
     }
-    
+
     @Transactional
     public void deductForBanner(Long vendorId, BigDecimal amount, Long bannerId) {
-        Vendor vendor = vendorRepository.findById(vendorId)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
-        BigDecimal currentBalance = vendor.getPromotionalBalance() != null ? vendor.getPromotionalBalance() : BigDecimal.ZERO;
-        
-        if (currentBalance.compareTo(amount) < 0) {
-            throw new RuntimeException("Số dư ví không đủ để đăng ký Banner. Vui lòng nạp thêm tiền vào ví.");
+        deductGeneric(vendorId, amount, "BANNER", bannerId);
+    }
+
+    @Transactional
+    public void deductGeneric(Long vendorId, BigDecimal amount, String refType, Long refId) {
+        VendorWallet wallet = walletRepository.findByVendorIdForUpdate(vendorId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy ví của vendor"));
+
+        if (wallet.getAvailableBalance().compareTo(amount) < 0) {
+            throw new RuntimeException("Số dư ví không đủ. Vui lòng nạp thêm tiền vào ví.");
         }
-        
-        vendor.setPromotionalBalance(currentBalance.subtract(amount));
-        vendorRepository.save(vendor);
-        
-        WalletTransaction transaction = WalletTransaction.builder()
-                .vendor(vendor)
+
+        BigDecimal availableBefore = wallet.getAvailableBalance();
+        BigDecimal lockedBefore = wallet.getLockedBalance();
+
+        wallet.setAvailableBalance(wallet.getAvailableBalance().subtract(amount));
+        wallet.setTotalSpent(wallet.getTotalSpent().add(amount));
+        walletRepository.save(wallet);
+
+        WalletTransaction tx = WalletTransaction.builder()
+                .wallet(wallet)
+                .vendor(wallet.getVendor())
+                .transactionCode("WLT-" + UUID.randomUUID().toString())
                 .amount(amount.negate())
-                .transactionType("DEDUCTION")
-                .bannerId(bannerId)
-                .status("SUCCESS")
+                .type("DEDUCTION_" + refType)
+                .availableBefore(availableBefore)
+                .availableAfter(wallet.getAvailableBalance())
+                .lockedBefore(lockedBefore)
+                .lockedAfter(wallet.getLockedBalance())
+                .referenceType(refType)
+                .referenceId(refId)
                 .build();
-        transactionRepository.save(transaction);
+        transactionRepository.save(tx);
+    }
+
+    @Transactional
+    public void refundBudget(Long vendorId, BigDecimal amount, Long promotionId) {
+        VendorWallet wallet = walletRepository.findByVendorIdForUpdate(vendorId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy ví của vendor"));
+
+        BigDecimal availableBefore = wallet.getAvailableBalance();
+        BigDecimal lockedBefore = wallet.getLockedBalance();
+
+        wallet.setAvailableBalance(wallet.getAvailableBalance().add(amount));
+        walletRepository.save(wallet);
+
+        WalletTransaction tx = WalletTransaction.builder()
+                .wallet(wallet)
+                .vendor(wallet.getVendor())
+                .transactionCode("WLT-" + UUID.randomUUID().toString())
+                .amount(amount)
+                .type("REFUND")
+                .availableBefore(availableBefore)
+                .availableAfter(wallet.getAvailableBalance())
+                .lockedBefore(lockedBefore)
+                .lockedAfter(wallet.getLockedBalance())
+                .referenceType("PROMOTION")
+                .referenceId(promotionId)
+                .build();
+        transactionRepository.save(tx);
     }
 }

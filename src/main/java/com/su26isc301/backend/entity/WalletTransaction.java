@@ -21,44 +21,45 @@ public class WalletTransaction {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "wallet_id", nullable = false)
+    private VendorWallet wallet;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "vendor_id", nullable = false)
     private Vendor vendor;
+
+    @Column(name = "transaction_code", nullable = false, unique = true)
+    private String transactionCode;
 
     @Column(nullable = false)
     private BigDecimal amount;
 
     /**
-     * TOP_UP, DEDUCTION, REFUND
+     * TOP_UP, PROMOTION_RESERVE, PROMOTION_CLICK_CHARGE, PROMOTION_RELEASE, ADMIN_ADJUST
      */
-    @Column(name = "transaction_type", nullable = false)
-    private String transactionType;
+    @Column(name = "type", nullable = false)
+    private String type;
 
-    /**
-     * Mã order từ cổng thanh toán (dành cho TOP_UP)
-     */
-    @Column(name = "payment_ref", unique = true)
-    private String paymentRef;
+    @Column(name = "available_before", nullable = false)
+    private BigDecimal availableBefore;
 
-    /**
-     * Mã chiến dịch quảng bá liên quan (dành cho DEDUCTION, REFUND)
-     */
-    @Column(name = "promotion_id")
-    private Long promotionId;
+    @Column(name = "available_after", nullable = false)
+    private BigDecimal availableAfter;
 
-    @Column(name = "product_ad_id")
-    private Long productAdId;
+    @Column(name = "locked_before", nullable = false)
+    private BigDecimal lockedBefore;
 
-    @Column(name = "banner_id")
-    private Long bannerId;
+    @Column(name = "locked_after", nullable = false)
+    private BigDecimal lockedAfter;
 
-    /**
-     * PENDING, SUCCESS, FAILED
-     */
-    @Column(nullable = false)
-    private String status;
+    @Column(name = "reference_type")
+    private String referenceType;
 
-    @Column(name = "payment_url", columnDefinition = "TEXT")
-    private String paymentUrl;
+    @Column(name = "reference_id")
+    private Long referenceId;
+
+    @Column(name = "payment_transaction_id")
+    private String paymentTransactionId;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

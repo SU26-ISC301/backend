@@ -25,17 +25,27 @@ public class PromotionClick {
     private PostPromotion promotion;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id", nullable = false)
+    private Product product;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "viewer_id")
     private Profile viewer;
 
     @Column(name = "session_id")
     private String sessionId;
 
-    @Column(name = "cpc_amount", nullable = false)
-    private BigDecimal cpcAmount;
+    @Column(name = "roi_amount_snapshot", nullable = false)
+    private BigDecimal roiAmountSnapshot;
 
-    @Column(name = "reputation_score_snapshot", nullable = false)
-    private BigDecimal reputationScoreSnapshot;
+    @Column(name = "is_customer_click", nullable = false)
+    private Boolean isCustomerClick;
+
+    @Column(name = "wallet_transaction_id")
+    private Long walletTransactionId;
+
+    @Column(name = "surface")
+    private String surface;
 
     @Column(name = "is_charged", nullable = false)
     @Builder.Default

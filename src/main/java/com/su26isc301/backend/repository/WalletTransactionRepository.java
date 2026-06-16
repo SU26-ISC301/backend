@@ -14,9 +14,5 @@ import java.util.Optional;
 public interface WalletTransactionRepository extends JpaRepository<WalletTransaction, Long> {
     List<WalletTransaction> findByVendorIdOrderByCreatedAtDesc(Long vendorId);
 
-    Optional<WalletTransaction> findByPaymentRef(String paymentRef);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT w FROM WalletTransaction w WHERE w.paymentRef = :paymentRef")
-    Optional<WalletTransaction> findByPaymentRefWithLock(String paymentRef);
 }

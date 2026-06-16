@@ -6,6 +6,8 @@ import java.math.BigDecimal;
 @Data
 public class CreatePromotionRequest {
     private Long productId;
-    private Integer days;
-    private BigDecimal budget;
+    private BigDecimal promotionAmount;
+    private BigDecimal roiPerClick;
+    private java.time.ZonedDateTime startDate;
+    private java.time.ZonedDateTime endDate;
 }

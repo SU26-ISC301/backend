@@ -7,5 +7,10 @@ import java.math.BigDecimal;
 @Data
 @Builder
 public class WalletBalanceResponse {
-    private BigDecimal balance;
+    private Long vendorId;
+    private String currency;
+    private BigDecimal availableBalance;
+    private BigDecimal lockedBalance;
+    private BigDecimal totalDeposited;
+    private BigDecimal totalSpent;
 }
