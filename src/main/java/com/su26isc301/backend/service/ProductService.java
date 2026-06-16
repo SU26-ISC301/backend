@@ -32,6 +32,7 @@ public class ProductService {
     private final ProductMapper productMapper;
     private final SubscriptionService subscriptionService;
     private final VendorSubscriptionPlanRepository subscriptionPlanRepository;
+    private final PostPromotionRepository postPromotionRepository;
 
     @Transactional
     public ProductResponse createProduct(String email, ProductCreateRequest request) {
@@ -127,7 +128,38 @@ public class ProductService {
     public List<ProductResponse> getPublicActiveProducts() {
         List<Product> products = productRepository
                 .findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(ProductStatus.ACTIVE.getValue());
-        return mapToProductResponses(products, false);
+        
+        List<ProductResponse> responses = mapToProductResponses(products, false);
+        
+        // Fetch active promotions to flag promoted products
+        List<PostPromotion> activePromotions = postPromotionRepository.findByStatus("ACTIVE");
+        java.util.Map<Long, Long> promotedProductMap = activePromotions.stream()
+                .collect(Collectors.toMap(p -> p.getProduct().getId(), PostPromotion::getId, (p1, p2) -> p1));
+
+        for (ProductResponse res : responses) {
+            Long promoId = promotedProductMap.get(res.getId());
+            if (promoId != null) {
+                res.setIsPromoted(true);
+                res.setPromotionId(promoId);
+            } else {
+                res.setIsPromoted(false);
+            }
+        }
+
+        // Sort: Promoted products first, then by createdAt desc
+        responses.sort((r1, r2) -> {
+            boolean p1 = Boolean.TRUE.equals(r1.getIsPromoted());
+            boolean p2 = Boolean.TRUE.equals(r2.getIsPromoted());
+            if (p1 && !p2) return -1;
+            if (!p1 && p2) return 1;
+            
+            if (r1.getCreatedAt() != null && r2.getCreatedAt() != null) {
+                return r2.getCreatedAt().compareTo(r1.getCreatedAt());
+            }
+            return 0;
+        });
+
+        return responses;
     }
 
     @Transactional

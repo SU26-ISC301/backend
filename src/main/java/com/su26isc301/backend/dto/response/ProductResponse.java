@@ -49,6 +49,8 @@ public class ProductResponse {
     private String deliveryMethod;
     private String vendorPlanType;
     private Boolean premiumHighlighted;
+    private Boolean isPromoted;
+    private Long promotionId;
     private List<ProductMediaResponse> mediaList;
     private List<ProductAttributeResponse> attributes;
     private List<ProductVariantResponse> variants;
