@@ -110,9 +110,7 @@ public class ProductService {
     @Transactional(readOnly = true)
     public List<ProductResponse> getProductsByVendor(Long vendorId) {
         List<Product> products = productRepository.findByVendorIdAndIsActiveTrue(vendorId);
-        return products.stream()
-                .map(this::mapToProductResponseWithVendorPlan)
-                .collect(Collectors.toList());
+        return mapToProductResponses(products, false);
     }
 
     @Transactional(readOnly = true)
@@ -122,18 +120,14 @@ public class ProductService {
                 ? productRepository.findByIsActiveTrueOrderByCreatedAtDesc()
                 : productRepository.findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(normalizedStatus);
 
-        return products.stream()
-                .map(this::mapToProductResponseWithVendorPlan)
-                .collect(Collectors.toList());
+        return mapToProductResponses(products, false);
     }
 
     @Transactional(readOnly = true)
     public List<ProductResponse> getPublicActiveProducts() {
-        return productRepository
-                .findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(ProductStatus.ACTIVE.getValue())
-                .stream()
-                .map(this::mapToProductResponseWithVendorPlan)
-                .collect(Collectors.toList());
+        List<Product> products = productRepository
+                .findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(ProductStatus.ACTIVE.getValue());
+        return mapToProductResponses(products, false);
     }
 
     @Transactional
@@ -269,6 +263,59 @@ public class ProductService {
     }
 
     // --- Private Helper Methods (DRY Collection Synchronization & Matching) ---
+
+    private List<ProductResponse> mapToProductResponses(List<Product> products, boolean revealContact) {
+        if (products == null || products.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> vendorIds = products.stream()
+                .filter(p -> p != null && p.getVendor() != null)
+                .map(p -> p.getVendor().getId())
+                .distinct()
+                .collect(Collectors.toList());
+
+        java.util.Map<Long, VendorSubscriptionPlan> planMap = new java.util.HashMap<>();
+        if (!vendorIds.isEmpty()) {
+            List<VendorSubscriptionPlan> plans = subscriptionPlanRepository.findByVendorIdInAndIsActiveTrue(vendorIds);
+            for (VendorSubscriptionPlan plan : plans) {
+                if (plan != null && plan.getVendor() != null) {
+                    planMap.put(plan.getVendor().getId(), plan);
+                }
+            }
+        }
+
+        return products.stream()
+                .map(product -> {
+                    ProductResponse response = productMapper.mapToProductResponse(product);
+                    if (response == null || product == null || product.getVendor() == null) {
+                        return response;
+                    }
+
+                    String profilePhone = product.getVendor().getProfile() != null ? product.getVendor().getProfile().getPhone() : null;
+                    String vendorPhone = firstNonBlank(profilePhone, product.getVendor().getPhone());
+                    response.setVendorPhoneMasked(maskPhone(vendorPhone));
+                    response.setVendorPhone(revealContact ? vendorPhone : response.getVendorPhoneMasked());
+
+                    VendorSubscriptionPlan plan = planMap.get(product.getVendor().getId());
+                    if (plan != null) {
+                        boolean activeNow = plan.getExpiresAt() == null || ZonedDateTime.now().isBefore(plan.getExpiresAt());
+                        String planType = plan.getPlanType() != null ? plan.getPlanType().trim().toLowerCase() : SubscriptionService.PLAN_FREE;
+                        response.setVendorPlanType(planType);
+                        response.setPremiumHighlighted(activeNow && SubscriptionService.PLAN_PREMIUM.equals(planType));
+                    }
+
+                    if (response.getVendorPlanType() == null) {
+                        response.setVendorPlanType(SubscriptionService.PLAN_FREE);
+                    }
+                    if (response.getPremiumHighlighted() == null) {
+                        response.setPremiumHighlighted(false);
+                    }
+
+                    return response;
+                })
+                .collect(Collectors.toList());
+    }
 
     private ProductResponse mapToProductResponseWithVendorPlan(Product product) {
         return mapToProductResponseWithVendorPlan(product, false);

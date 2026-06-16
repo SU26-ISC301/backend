@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface VendorSubscriptionPlanRepository extends JpaRepository<VendorSubscriptionPlan, Long> {
@@ -12,6 +13,8 @@ public interface VendorSubscriptionPlanRepository extends JpaRepository<VendorSu
     Optional<VendorSubscriptionPlan> findByVendorId(Long vendorId);
 
     Optional<VendorSubscriptionPlan> findByVendorIdAndIsActiveTrue(Long vendorId);
+
+    List<VendorSubscriptionPlan> findByVendorIdInAndIsActiveTrue(List<Long> vendorIds);
 
     boolean existsByVendorId(Long vendorId);
 }
