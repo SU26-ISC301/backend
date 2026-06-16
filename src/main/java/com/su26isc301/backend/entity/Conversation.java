@@ -13,7 +13,11 @@ import java.time.ZonedDateTime;
         uniqueConstraints = @UniqueConstraint(
                 name = "conversations_vendor_customer_key",
                 columnNames = {"vendor_id", "customer_id"}
-        )
+        ),
+        indexes = {
+            @Index(name = "idx_conversations_vendor_id", columnList = "vendor_id"),
+            @Index(name = "idx_conversations_customer_id", columnList = "customer_id")
+        }
 )
 @Getter
 @Setter

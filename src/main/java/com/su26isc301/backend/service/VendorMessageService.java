@@ -33,9 +33,45 @@ public class VendorMessageService {
     @Transactional(readOnly = true)
     public List<VendorConversationResponse> getConversations(String email) {
         Vendor vendor = getCurrentVendor(email);
-        return conversationRepository.findByVendorIdOrderByUpdatedAtDesc(vendor.getId())
-                .stream()
-                .map(conversation -> toConversationResponse(conversation, vendor.getProfile()))
+        List<Conversation> conversations = conversationRepository.findByVendorIdOrderByUpdatedAtDesc(vendor.getId());
+        if (conversations.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> conversationIds = conversations.stream().map(Conversation::getId).toList();
+
+        // 1. Fetch last messages in batch
+        java.util.Map<Long, Message> lastMessageMap = new java.util.HashMap<>();
+        List<Message> lastMessages = messageRepository.findLastMessagesByConversationIds(conversationIds);
+        for (Message msg : lastMessages) {
+            lastMessageMap.put(msg.getConversation().getId(), msg);
+        }
+
+        // 2. Fetch unread counts in batch
+        java.util.Map<Long, Long> unreadCountMap = new java.util.HashMap<>();
+        List<Object[]> unreadCounts = messageRepository.countUnreadMessagesByConversationIds(conversationIds, vendor.getProfile().getId());
+        for (Object[] row : unreadCounts) {
+            Long convId = (Long) row[0];
+            Long count = (Long) row[1];
+            unreadCountMap.put(convId, count);
+        }
+
+        return conversations.stream()
+                .map(conversation -> {
+                    Profile customer = conversation.getCustomer();
+                    Message lastMessage = lastMessageMap.get(conversation.getId());
+                    long unreadCount = unreadCountMap.getOrDefault(conversation.getId(), 0L);
+
+                    return new VendorConversationResponse(
+                            conversation.getId(),
+                            customer.getId(),
+                            customer.getFullName(),
+                            customer.getAvatarUrl(),
+                            lastMessage == null ? "" : lastMessage.getContent(),
+                            lastMessage == null ? conversation.getUpdatedAt() : lastMessage.getCreatedAt(),
+                            unreadCount
+                    );
+                })
                 .toList();
     }
 

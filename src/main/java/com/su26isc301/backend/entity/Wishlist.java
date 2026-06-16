@@ -7,7 +7,10 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.ZonedDateTime;
 
 @Entity
-@Table(name = "wishlists")
+@Table(name = "wishlists", indexes = {
+    @Index(name = "idx_wishlists_user_id", columnList = "user_id"),
+    @Index(name = "idx_wishlists_product_id", columnList = "product_id")
+})
 @Getter
 @Setter
 @NoArgsConstructor

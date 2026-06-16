@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/market-research")
 @RequiredArgsConstructor
@@ -24,5 +26,13 @@ public class MarketResearchController {
     ) {
         MarketResearchResponse response = marketResearchService.getPublicProductMarketResearch(query, categoryName);
         return ResponseEntity.ok(ApiResponse.success("Lấy khoảng giá thị trường thành công", response));
+    }
+
+    @GetMapping("/categories")
+    public ResponseEntity<ApiResponse<List<MarketResearchResponse.MarketCategoryOption>>> getMarketResearchCategories() {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Lấy cây hạng mục nghiên cứu thị trường thành công",
+                marketResearchService.getCategoryTree()
+        ));
     }
 }
