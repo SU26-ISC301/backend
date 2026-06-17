@@ -132,9 +132,7 @@ public class WalletService {
         if ("FAILED".equals(order.getStatus()) || "CANCELLED".equals(order.getStatus())) return "cancelled";
 
         if ("payos".equalsIgnoreCase(order.getPaymentMethod())) {
-            // [LOCAL TEST] Tạm tắt gọi PayOS, ép thành công luôn
-            // String payosStatus = payOSService.getPaymentStatus(Long.parseLong(orderCode));
-            String payosStatus = "PAID";
+            String payosStatus = payOSService.getPaymentStatus(Long.parseLong(orderCode));
             if ("PAID".equals(payosStatus)) {
                 activateTopUp(order);
                 return "paid";
