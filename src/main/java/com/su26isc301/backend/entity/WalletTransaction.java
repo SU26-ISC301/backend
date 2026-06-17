@@ -37,7 +37,7 @@ public class WalletTransaction {
     /**
      * TOP_UP, PROMOTION_RESERVE, PROMOTION_CLICK_CHARGE, PROMOTION_RELEASE, ADMIN_ADJUST
      */
-    @Column(name = "type", nullable = false)
+    @Column(name = "transaction_type", nullable = false)
     private String type;
 
     @Column(name = "available_before", nullable = false)
@@ -60,6 +60,9 @@ public class WalletTransaction {
 
     @Column(name = "payment_transaction_id")
     private String paymentTransactionId;
+
+    @Column(name = "status", nullable = false)
+    private String status;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
