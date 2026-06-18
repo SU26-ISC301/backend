@@ -2,7 +2,6 @@ package com.su26isc301.backend.controller;
 
 import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.BannerResponse;
-import com.su26isc301.backend.dto.response.ProductAdResponse;
 import com.su26isc301.backend.service.AdvertisementService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -19,13 +18,6 @@ public class PublicAdvertisementController {
 
     private final AdvertisementService advertisementService;
 
-    @GetMapping("/products/featured")
-    public ResponseEntity<ApiResponse<Page<ProductAdResponse>>> getFeaturedProducts(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        Page<ProductAdResponse> response = advertisementService.getActiveProductAds(PageRequest.of(page, size));
-        return ResponseEntity.ok(ApiResponse.success("Retrieved featured products successfully", response));
-    }
 
     @GetMapping("/banners")
     public ResponseEntity<ApiResponse<List<BannerResponse>>> getActiveBanners(

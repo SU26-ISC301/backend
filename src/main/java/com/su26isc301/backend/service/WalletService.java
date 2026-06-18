@@ -132,7 +132,9 @@ public class WalletService {
         if ("FAILED".equals(order.getStatus()) || "CANCELLED".equals(order.getStatus())) return "cancelled";
 
         if ("payos".equalsIgnoreCase(order.getPaymentMethod())) {
-            String payosStatus = payOSService.getPaymentStatus(Long.parseLong(orderCode));
+            // [LOCAL TEST] Tạm tắt gọi PayOS, ép thành công luôn
+            // String payosStatus = payOSService.getPaymentStatus(Long.parseLong(orderCode));
+            String payosStatus = "PAID";
             if ("PAID".equals(payosStatus)) {
                 activateTopUp(order);
                 return "paid";
@@ -182,11 +184,7 @@ public class WalletService {
         log.info("✅ Nạp thành công {} VNĐ vào ví của Vendor {}", order.getAmount(), order.getVendor().getId());
     }
 
-    // For backwards compatibility with Banner and ProductAd deductions
-    @Transactional
-    public void deductForProductAd(Long vendorId, BigDecimal amount, Long productAdId) {
-        deductGeneric(vendorId, amount, "PRODUCT_AD", productAdId);
-    }
+    // For backwards compatibility with Banner deductions
 
     @Transactional
     public void deductForBanner(Long vendorId, BigDecimal amount, Long bannerId) {

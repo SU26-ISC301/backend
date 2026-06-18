@@ -42,8 +42,8 @@ public class PromotionService {
             throw new RuntimeException("Chỉ sản phẩm ACTIVE mới được quảng bá");
         }
 
-        if (promotionAmount.compareTo(new BigDecimal("100000")) < 0) {
-            throw new RuntimeException("Ngân sách tối thiểu là 100.000 VNĐ");
+        if (promotionAmount.compareTo(new BigDecimal("10000")) < 0) {
+            throw new RuntimeException("Ngân sách tối thiểu là 10.000 VNĐ");
         }
 
         if (roiPerClick.compareTo(new BigDecimal("1000")) < 0) {

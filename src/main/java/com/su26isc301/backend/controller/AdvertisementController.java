@@ -1,10 +1,8 @@
 package com.su26isc301.backend.controller;
 
 import com.su26isc301.backend.dto.request.BannerCreateRequest;
-import com.su26isc301.backend.dto.request.ProductAdCreateRequest;
 import com.su26isc301.backend.dto.response.ApiResponse;
 import com.su26isc301.backend.dto.response.BannerResponse;
-import com.su26isc301.backend.dto.response.ProductAdResponse;
 import com.su26isc301.backend.service.AdvertisementService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,26 +20,6 @@ public class AdvertisementController {
 
     private final AdvertisementService advertisementService;
 
-    @PostMapping("/products")
-    @PreAuthorize("hasRole('VENDOR')")
-    public ResponseEntity<ApiResponse<ProductAdResponse>> createProductAd(
-            Authentication authentication,
-            @Valid @RequestBody ProductAdCreateRequest request) {
-        String email = String.valueOf(authentication.getPrincipal());
-        ProductAdResponse response = advertisementService.createProductAd(email, request);
-        return ResponseEntity.ok(ApiResponse.success("Product ad registered successfully", response));
-    }
-
-    @GetMapping("/products")
-    @PreAuthorize("hasRole('VENDOR')")
-    public ResponseEntity<ApiResponse<Page<ProductAdResponse>>> getMyProductAds(
-            Authentication authentication,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        String email = String.valueOf(authentication.getPrincipal());
-        Page<ProductAdResponse> response = advertisementService.getVendorProductAds(email, PageRequest.of(page, size));
-        return ResponseEntity.ok(ApiResponse.success("Retrieved product ads successfully", response));
-    }
 
     @PostMapping("/banners")
     @PreAuthorize("hasRole('VENDOR')")
