@@ -20,9 +20,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     boolean existsBySlug(String slug);
 
     @org.springframework.data.jpa.repository.Query("SELECT p FROM Product p WHERE p.isActive = true AND UPPER(p.status) = 'ACTIVE' " +
-           "AND (:categoryId IS NULL OR p.category.id = :categoryId) " +
-           "AND (:vendorId IS NULL OR p.vendor.id = :vendorId) " +
-           "AND (:keyword IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+           "AND (COALESCE(:categoryId, 0) = 0 OR p.category.id = :categoryId) " +
+           "AND (COALESCE(:vendorId, 0) = 0 OR p.vendor.id = :vendorId) " +
+           "AND (COALESCE(:keyword, '') = '' OR LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%')))")
     List<Product> searchActiveProducts(
             @org.springframework.data.repository.query.Param("keyword") String keyword,
             @org.springframework.data.repository.query.Param("categoryId") Long categoryId,

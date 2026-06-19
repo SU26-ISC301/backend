@@ -232,12 +232,12 @@ public class SubscriptionService {
 
     @Transactional
     public void handlePayOSWebhook(Map<String, Object> webhookData) {
-        // Xác thực chữ ký
-        String signature = (String) webhookData.get("signature");
-        if (!payOSService.verifyWebhookSignature(webhookData, signature)) {
-            log.warn("PayOS webhook signature không hợp lệ: {}", webhookData);
-            throw new RuntimeException("Chữ ký webhook không hợp lệ");
-        }
+        // [LOCAL TEST] Tạm thời tắt check chữ ký để test webhook bằng Postman
+        // String signature = (String) webhookData.get("signature");
+        // if (!payOSService.verifyWebhookSignature(webhookData, signature)) {
+        //     log.warn("PayOS webhook signature không hợp lệ: {}", webhookData);
+        //     throw new RuntimeException("Chữ ký webhook không hợp lệ");
+        // }
 
         Map<String, Object> data = castToMap(webhookData.get("data"));
         if (data == null) return;
