@@ -41,9 +41,24 @@ public class ProductController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ProductResponse>>> getPublicProducts() {
-        List<ProductResponse> responses = productService.getPublicActiveProducts();
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getPublicProducts(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long categoryId
+    ) {
+        List<ProductResponse> responses = productService.searchPublicProducts(keyword, categoryId, null);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách sản phẩm đang bán thành công", responses));
+    }
+
+    @GetMapping("/my-products")
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getMyProducts(
+            Authentication authentication
+    ) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(401).body(ApiResponse.error("Vui lòng đăng nhập"));
+        }
+        String email = authentication.getName();
+        List<ProductResponse> responses = productService.getMyProducts(email);
+        return ResponseEntity.ok(ApiResponse.success("Lấy danh sách sản phẩm của tôi thành công", responses));
     }
 
     @GetMapping("/{id}")
@@ -60,7 +75,7 @@ public class ProductController {
 
     @GetMapping("/vendor/{vendorId}")
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getProductsByVendor(@PathVariable Long vendorId) {
-        List<ProductResponse> responses = productService.getProductsByVendor(vendorId);
+        List<ProductResponse> responses = productService.searchPublicProducts(null, null, vendorId);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách sản phẩm thành công", responses));
     }
 

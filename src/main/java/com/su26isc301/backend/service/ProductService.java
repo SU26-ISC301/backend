@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -125,9 +126,19 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public List<ProductResponse> getPublicActiveProducts() {
-        List<Product> products = productRepository
-                .findByStatusIgnoreCaseAndIsActiveTrueOrderByCreatedAtDesc(ProductStatus.ACTIVE.getValue());
+    public List<ProductResponse> getMyProducts(String email) {
+        Profile profile = profileRepository.findByEmail(email.trim().toLowerCase())
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thông tin tài khoản với email: " + email));
+        Vendor vendor = vendorRepository.findByProfile(profile)
+                .orElseThrow(() -> new ForbiddenAccessException("Tài khoản này chưa đăng ký gian hàng Vendor"));
+
+        List<Product> products = productRepository.findByVendorIdAndIsActiveTrue(vendor.getId());
+        return mapToProductResponses(products, false);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProductResponse> searchPublicProducts(String keyword, Long categoryId, Long vendorId) {
+        List<Product> products = productRepository.searchActiveProducts(keyword, categoryId, vendorId);
         
         List<ProductResponse> responses = mapToProductResponses(products, false);
         
@@ -136,25 +147,34 @@ public class ProductService {
         List<PostPromotion> activePromotions = postPromotionRepository.findByStatus("ACTIVE").stream()
                 .filter(p -> !now.isBefore(p.getStartDate()) && !now.isAfter(p.getEndDate()))
                 .collect(Collectors.toList());
-        java.util.Map<Long, Long> promotedProductMap = activePromotions.stream()
-                .collect(Collectors.toMap(p -> p.getProduct().getId(), PostPromotion::getId, (p1, p2) -> p1));
+        java.util.Map<Long, PostPromotion> promotedProductMap = activePromotions.stream()
+                .collect(Collectors.toMap(p -> p.getProduct().getId(), p -> p, (p1, p2) -> p1));
 
         for (ProductResponse res : responses) {
-            Long promoId = promotedProductMap.get(res.getId());
-            if (promoId != null) {
+            PostPromotion promo = promotedProductMap.get(res.getId());
+            if (promo != null) {
                 res.setIsPromoted(true);
-                res.setPromotionId(promoId);
+                res.setPromotionId(promo.getId());
             } else {
                 res.setIsPromoted(false);
             }
         }
 
-        // Sort: Promoted products first, then by createdAt desc
+        // Sort: Promoted products first (by ROI desc), then by createdAt desc
         responses.sort((r1, r2) -> {
             boolean p1 = Boolean.TRUE.equals(r1.getIsPromoted());
             boolean p2 = Boolean.TRUE.equals(r2.getIsPromoted());
             if (p1 && !p2) return -1;
             if (!p1 && p2) return 1;
+            
+            if (p1 && p2) {
+                PostPromotion promo1 = promotedProductMap.get(r1.getId());
+                PostPromotion promo2 = promotedProductMap.get(r2.getId());
+                BigDecimal roi1 = promo1 != null && promo1.getRoiPerClick() != null ? promo1.getRoiPerClick() : BigDecimal.ZERO;
+                BigDecimal roi2 = promo2 != null && promo2.getRoiPerClick() != null ? promo2.getRoiPerClick() : BigDecimal.ZERO;
+                int roiCompare = roi2.compareTo(roi1); // Descending
+                if (roiCompare != 0) return roiCompare;
+            }
             
             if (r1.getCreatedAt() != null && r2.getCreatedAt() != null) {
                 return r2.getCreatedAt().compareTo(r1.getCreatedAt());
