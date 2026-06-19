@@ -142,9 +142,11 @@ public class ProductService {
         
         List<ProductResponse> responses = mapToProductResponses(products, false);
         
-        // Fetch active promotions to flag promoted products
+        // Fetch active promotions only for the retrieved products
+        List<Long> productIds = products.stream().map(Product::getId).collect(Collectors.toList());
         ZonedDateTime now = ZonedDateTime.now();
-        List<PostPromotion> activePromotions = postPromotionRepository.findByStatus("ACTIVE").stream()
+        List<PostPromotion> activePromotions = productIds.isEmpty() ? new ArrayList<>() :
+                postPromotionRepository.findByProductIdInAndStatus(productIds, "ACTIVE").stream()
                 .filter(p -> !now.isBefore(p.getStartDate()) && !now.isAfter(p.getEndDate()))
                 .collect(Collectors.toList());
         java.util.Map<Long, PostPromotion> promotedProductMap = activePromotions.stream()

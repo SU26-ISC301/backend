@@ -10,4 +10,5 @@ import java.util.List;
 public interface PostPromotionRepository extends JpaRepository<PostPromotion, Long> {
     List<PostPromotion> findByVendorId(Long vendorId);
     List<PostPromotion> findByStatus(String status);
+    List<PostPromotion> findByProductIdInAndStatus(List<Long> productIds, String status);
 }
