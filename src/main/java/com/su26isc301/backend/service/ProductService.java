@@ -10,6 +10,9 @@ import com.su26isc301.backend.exception.ResourceNotFoundException;
 import com.su26isc301.backend.mapper.ProductMapper;
 import com.su26isc301.backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -137,13 +140,13 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public List<ProductResponse> searchPublicProducts(String keyword, Long categoryId, Long vendorId) {
-        List<Product> products = productRepository.searchActiveProducts(keyword, categoryId, vendorId);
+    public Page<ProductResponse> searchPublicProducts(String keyword, Long categoryId, Long vendorId, Pageable pageable) {
+        Page<Product> productPage = productRepository.searchActiveProductsPageable(keyword, categoryId, vendorId, pageable);
         
-        List<ProductResponse> responses = mapToProductResponses(products, false);
+        List<ProductResponse> responses = mapToProductResponses(productPage.getContent(), false);
         
-        // Fetch active promotions only for the retrieved products
-        List<Long> productIds = products.stream().map(Product::getId).collect(Collectors.toList());
+        // Fetch active promotions only for the retrieved products to flag promoted products
+        List<Long> productIds = productPage.getContent().stream().map(Product::getId).collect(Collectors.toList());
         ZonedDateTime now = ZonedDateTime.now();
         List<PostPromotion> activePromotions = productIds.isEmpty() ? new ArrayList<>() :
                 postPromotionRepository.findByProductIdInAndStatus(productIds, "ACTIVE").stream()
@@ -162,30 +165,9 @@ public class ProductService {
             }
         }
 
-        // Sort: Promoted products first (by ROI desc), then by createdAt desc
-        responses.sort((r1, r2) -> {
-            boolean p1 = Boolean.TRUE.equals(r1.getIsPromoted());
-            boolean p2 = Boolean.TRUE.equals(r2.getIsPromoted());
-            if (p1 && !p2) return -1;
-            if (!p1 && p2) return 1;
-            
-            if (p1 && p2) {
-                PostPromotion promo1 = promotedProductMap.get(r1.getId());
-                PostPromotion promo2 = promotedProductMap.get(r2.getId());
-                BigDecimal roi1 = promo1 != null && promo1.getRoiPerClick() != null ? promo1.getRoiPerClick() : BigDecimal.ZERO;
-                BigDecimal roi2 = promo2 != null && promo2.getRoiPerClick() != null ? promo2.getRoiPerClick() : BigDecimal.ZERO;
-                int roiCompare = roi2.compareTo(roi1); // Descending
-                if (roiCompare != 0) return roiCompare;
-            }
-            
-            if (r1.getCreatedAt() != null && r2.getCreatedAt() != null) {
-                return r2.getCreatedAt().compareTo(r1.getCreatedAt());
-            }
-            return 0;
-        });
-
-        return responses;
+        return new PageImpl<>(responses, pageable, productPage.getTotalElements());
     }
+
 
     @Transactional
     public ProductResponse updateProduct(String email, Long id, ProductCreateRequest request) {

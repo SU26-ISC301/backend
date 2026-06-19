@@ -7,6 +7,9 @@ import com.su26isc301.backend.service.ProductService;
 import com.su26isc301.backend.service.AuditLogService;
 import com.su26isc301.backend.service.SupabaseStorageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -41,11 +44,14 @@ public class ProductController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ProductResponse>>> getPublicProducts(
+    public ResponseEntity<ApiResponse<Page<ProductResponse>>> getPublicProducts(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) Long categoryId
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
-        List<ProductResponse> responses = productService.searchPublicProducts(keyword, categoryId, null);
+        Pageable pageable = PageRequest.of(page, size);
+        Page<ProductResponse> responses = productService.searchPublicProducts(keyword, categoryId, null, pageable);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách sản phẩm đang bán thành công", responses));
     }
 
@@ -74,8 +80,13 @@ public class ProductController {
     }
 
     @GetMapping("/vendor/{vendorId}")
-    public ResponseEntity<ApiResponse<List<ProductResponse>>> getProductsByVendor(@PathVariable Long vendorId) {
-        List<ProductResponse> responses = productService.searchPublicProducts(null, null, vendorId);
+    public ResponseEntity<ApiResponse<Page<ProductResponse>>> getProductsByVendor(
+            @PathVariable Long vendorId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        Pageable pageable = PageRequest.of(page, size);
+        Page<ProductResponse> responses = productService.searchPublicProducts(null, null, vendorId, pageable);
         return ResponseEntity.ok(ApiResponse.success("Lấy danh sách sản phẩm thành công", responses));
     }
 
