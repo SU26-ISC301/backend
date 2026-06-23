@@ -47,6 +47,7 @@ public class ProductResponse {
     private Integer parcelLength;
     private Integer parcelHeight;
     private String deliveryMethod;
+    private Integer viewCount;
     private String vendorPlanType;
     private Boolean premiumHighlighted;
     private Boolean isPromoted;

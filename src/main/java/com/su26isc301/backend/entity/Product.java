@@ -111,6 +111,10 @@ public class Product {
     @Column(name = "updated_at")
     private ZonedDateTime updatedAt;
 
+    @Column(name = "view_count")
+    @Builder.Default
+    private Integer viewCount = 0;
+
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @org.hibernate.annotations.BatchSize(size = 50)
     private List<ProductMedia> mediaList;

@@ -13,15 +13,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.text.Normalizer;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,6 +40,10 @@ public class ProductService {
     private final SubscriptionService subscriptionService;
     private final VendorSubscriptionPlanRepository subscriptionPlanRepository;
     private final PostPromotionRepository postPromotionRepository;
+
+    // Chống spam view: Lưu "IP:productId" -> thời điểm xem gần nhất
+    private static final long VIEW_COOLDOWN_MS = 30 * 60 * 1000; // 30 phút
+    private final ConcurrentHashMap<String, Instant> viewCache = new ConcurrentHashMap<>();
 
     @Transactional
     public ProductResponse createProduct(String email, ProductCreateRequest request) {
@@ -102,14 +109,46 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public ProductResponse getProductById(Long id) {
-        return getProductById(id, false);
+        return getProductById(id, false, null);
     }
 
-    @Transactional(readOnly = true)
-    public ProductResponse getProductById(Long id, boolean revealContact) {
+    @Transactional
+    public ProductResponse getProductById(Long id, boolean revealContact, String viewerIp) {
         Product product = productRepository.findByIdAndIsActiveTrue(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm hoặc sản phẩm đã bị xóa với ID: " + id));
+
+        // Chống spam view: chỉ tăng nếu cùng IP chưa xem sản phẩm này trong 30 phút
+        if (shouldCountView(viewerIp, id)) {
+            productRepository.incrementViewCount(id);
+            product.setViewCount(product.getViewCount() != null ? product.getViewCount() + 1 : 1);
+        }
+
         return mapToProductResponseWithVendorPlan(product, revealContact);
+    }
+
+    /**
+     * Kiểm tra xem có nên đếm lượt xem không.
+     * Trả về true nếu cùng IP chưa xem sản phẩm này trong vòng 30 phút.
+     */
+    private boolean shouldCountView(String ip, Long productId) {
+        if (ip == null || ip.isBlank()) return true;
+        String key = ip + ":" + productId;
+        Instant now = Instant.now();
+        Instant lastView = viewCache.get(key);
+        if (lastView != null && now.toEpochMilli() - lastView.toEpochMilli() < VIEW_COOLDOWN_MS) {
+            return false; // Chưa hết 30 phút, không tăng view
+        }
+        viewCache.put(key, now);
+        return true;
+    }
+
+    /**
+     * Tự động dọn dẹp cache mỗi 10 phút để tránh tràn bộ nhớ.
+     */
+    @Scheduled(fixedRate = 10 * 60 * 1000)
+    public void cleanUpViewCache() {
+        Instant cutoff = Instant.now().minusMillis(VIEW_COOLDOWN_MS);
+        viewCache.entrySet().removeIf(entry -> entry.getValue().isBefore(cutoff));
     }
 
     @Transactional(readOnly = true)

@@ -47,6 +47,7 @@ public class ProductMapper {
         response.setParcelLength(product.getParcelLength());
         response.setParcelHeight(product.getParcelHeight());
         response.setDeliveryMethod(product.getDeliveryMethod());
+        response.setViewCount(product.getViewCount());
 
         // Map Media List
         if (product.getMediaList() != null) {
