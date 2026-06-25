@@ -3,31 +3,27 @@ package com.su26isc301.backend.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.su26isc301.backend.dto.request.ChatbotRequest;
+import com.su26isc301.backend.dto.response.ChatMessageResponse;
 import com.su26isc301.backend.dto.response.ChatbotResponse;
 import com.su26isc301.backend.dto.response.ProductResponse;
+import com.su26isc301.backend.entity.ChatMessage;
+import com.su26isc301.backend.entity.ChatSession;
 import com.su26isc301.backend.entity.Product;
+import com.su26isc301.backend.entity.Profile;
 import com.su26isc301.backend.mapper.ProductMapper;
-import com.su26isc301.backend.repository.ProductRepository;
+import com.su26isc301.backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
  * Service xử lý logic AI Chatbot giới thiệu sản phẩm.
- *
- * Flow:
- * 1. Lấy danh sách sản phẩm active từ DB (top sản phẩm mới nhất)
- * 2. Tạo prompt chứa thông tin sản phẩm → gửi cho Gemini
- * 3. Parse response JSON từ Gemini → tách reply + product IDs
- * 4. Map product IDs → ProductResponse đầy đủ
- * 5. Trả về ChatbotResponse
+ * Mỗi user chỉ có 1 session duy nhất — tự động tìm hoặc tạo.
  */
 @Slf4j
 @Service
@@ -37,9 +33,13 @@ public class ChatbotService {
     private final GeminiApiClient geminiApiClient;
     private final ProductRepository productRepository;
     private final ProductMapper productMapper;
+    private final ChatSessionRepository chatSessionRepository;
+    private final ChatMessageRepository chatMessageRepository;
+    private final ProfileRepository profileRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final int MAX_PRODUCTS_CONTEXT = 30; // Số sản phẩm tối đa gửi cho AI làm context
+    private static final int MAX_PRODUCTS_CONTEXT = 30;
+    private static final int MAX_HISTORY_MESSAGES = 20; // Giới hạn lịch sử gửi cho AI
 
     private static final String SYSTEM_PROMPT = """
             Bạn là trợ lý mua sắm AI của sàn thương mại điện tử 5Bros. 
@@ -68,31 +68,45 @@ public class ChatbotService {
             - Chỉ trả về ID của sản phẩm CÓ TRONG danh sách được cung cấp.
             """;
 
-    /**
-     * Xử lý tin nhắn chatbot.
-     */
-    @Transactional(readOnly = true)
-    public ChatbotResponse chat(ChatbotRequest request) {
+    // ========================
+    // CHAT (gửi tin nhắn + lưu lịch sử)
+    // ========================
+
+    @Transactional
+    public ChatbotResponse chat(ChatbotRequest request, String userEmail) {
         try {
-            // 1. Lấy sản phẩm active từ DB làm context cho AI
+            Profile profile = profileRepository.findByEmail(userEmail)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy profile"));
+
+            // Tìm session duy nhất của user, nếu chưa có thì tạo mới
+            ChatSession session = getOrCreateSingleSession(profile);
+
+            // Lưu tin nhắn user vào DB
+            ChatMessage userMessage = ChatMessage.builder()
+                    .chatSession(session)
+                    .role("user")
+                    .content(request.getMessage())
+                    .build();
+            chatMessageRepository.save(userMessage);
+
+            // Load lịch sử từ DB
+            List<ChatbotRequest.ChatMessage> history = loadHistoryFromDb(session.getId());
+
+            // Lấy sản phẩm active từ DB làm context
             List<Product> activeProducts = productRepository.searchActiveProductsPageable(
                     null, null, null, PageRequest.of(0, MAX_PRODUCTS_CONTEXT)
             ).getContent();
 
-            // 2. Build context string chứa thông tin sản phẩm
             String productContext = buildProductContext(activeProducts);
-
-            // 3. Build user message kèm context sản phẩm
             String enrichedMessage = buildEnrichedMessage(request.getMessage(), productContext);
 
-            // 4. Gọi Gemini API
+            // Gọi Gemini API
             String aiResponse = geminiApiClient.generateContent(
                     SYSTEM_PROMPT,
-                    request.getHistory(),
+                    history,
                     enrichedMessage
             );
 
-            // 5. Parse response
             if (aiResponse == null || aiResponse.isBlank()) {
                 return ChatbotResponse.builder()
                         .reply("Xin lỗi, tôi không thể xử lý yêu cầu lúc này. Vui lòng thử lại!")
@@ -100,7 +114,18 @@ public class ChatbotService {
                         .build();
             }
 
-            return parseAiResponse(aiResponse, activeProducts);
+            ChatbotResponse response = parseAiResponse(aiResponse, activeProducts);
+
+            // Lưu tin nhắn AI vào DB
+            ChatMessage aiMessage = ChatMessage.builder()
+                    .chatSession(session)
+                    .role("model")
+                    .content(response.getReply())
+                    .recommendedProductIds(extractProductIdsJson(aiResponse))
+                    .build();
+            chatMessageRepository.save(aiMessage);
+
+            return response;
 
         } catch (RuntimeException e) {
             String errorMsg = e.getMessage();
@@ -135,10 +160,129 @@ public class ChatbotService {
         }
     }
 
+    // ========================
+    // LỊCH SỬ CHAT
+    // ========================
+
     /**
-     * Build context string chứa thông tin sản phẩm để gửi cho AI.
-     * Chỉ gửi thông tin cần thiết để tiết kiệm token.
+     * Lấy toàn bộ lịch sử chat của user.
      */
+    @Transactional(readOnly = true)
+    public List<ChatMessageResponse> getChatHistory(String userEmail) {
+        Profile profile = profileRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy profile"));
+
+        List<ChatSession> sessions = chatSessionRepository.findByProfileIdOrderByUpdatedAtDesc(profile.getId());
+        if (sessions.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        ChatSession session = sessions.get(0); // Lấy session duy nhất
+        List<ChatMessage> messages = chatMessageRepository.findByChatSessionIdOrderByCreatedAtAsc(session.getId());
+
+        return messages.stream()
+                .map(m -> {
+                    List<ProductResponse> products = Collections.emptyList();
+                    if ("model".equals(m.getRole()) && m.getRecommendedProductIds() != null) {
+                        products = loadProductsFromIds(m.getRecommendedProductIds());
+                    }
+                    return ChatMessageResponse.builder()
+                            .id(m.getId())
+                            .role(m.getRole())
+                            .content(m.getContent())
+                            .recommendedProducts(products)
+                            .createdAt(m.getCreatedAt())
+                            .build();
+                })
+                .toList();
+    }
+
+    /**
+     * Xóa toàn bộ lịch sử chat của user (tạo session mới).
+     */
+    @Transactional
+    public void clearChatHistory(String userEmail) {
+        Profile profile = profileRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy profile"));
+
+        List<ChatSession> sessions = chatSessionRepository.findByProfileIdOrderByUpdatedAtDesc(profile.getId());
+        chatSessionRepository.deleteAll(sessions); // Cascade xóa luôn messages
+    }
+
+    // ========================
+    // PRIVATE HELPERS
+    // ========================
+
+    /**
+     * Tìm session duy nhất của user, hoặc tạo mới nếu chưa có.
+     */
+    private ChatSession getOrCreateSingleSession(Profile profile) {
+        List<ChatSession> sessions = chatSessionRepository.findByProfileIdOrderByUpdatedAtDesc(profile.getId());
+
+        if (!sessions.isEmpty()) {
+            return sessions.get(0); // Trả về session duy nhất
+        }
+
+        // Tạo session mới
+        ChatSession newSession = ChatSession.builder()
+                .profile(profile)
+                .title("Trò chuyện với 5Bros AI")
+                .build();
+
+        return chatSessionRepository.save(newSession);
+    }
+
+    /**
+     * Load lịch sử chat từ DB → format cho Gemini.
+     * Bỏ tin nhắn cuối (vừa save) và giới hạn số lượng.
+     */
+    private List<ChatbotRequest.ChatMessage> loadHistoryFromDb(Long sessionId) {
+        List<ChatMessage> allMessages = chatMessageRepository.findByChatSessionIdOrderByCreatedAtAsc(sessionId);
+
+        if (allMessages.size() <= 1) {
+            return Collections.emptyList();
+        }
+
+        // Lấy N tin nhắn gần nhất, bỏ tin cuối (tin mới nhất vừa save)
+        List<ChatMessage> historyMessages = allMessages.subList(
+                Math.max(0, allMessages.size() - 1 - MAX_HISTORY_MESSAGES),
+                allMessages.size() - 1
+        );
+
+        return historyMessages.stream()
+                .map(m -> new ChatbotRequest.ChatMessage(m.getRole(), m.getContent()))
+                .toList();
+    }
+
+    private String extractProductIdsJson(String aiResponse) {
+        try {
+            JsonNode jsonNode = objectMapper.readTree(aiResponse);
+            if (jsonNode.has("productIds") && jsonNode.get("productIds").isArray()) {
+                return jsonNode.get("productIds").toString();
+            }
+        } catch (Exception e) {
+            log.debug("Không thể parse productIds từ AI response");
+        }
+        return null;
+    }
+
+    private List<ProductResponse> loadProductsFromIds(String productIdsJson) {
+        try {
+            JsonNode ids = objectMapper.readTree(productIdsJson);
+            if (!ids.isArray()) return Collections.emptyList();
+
+            List<ProductResponse> products = new ArrayList<>();
+            for (JsonNode idNode : ids) {
+                productRepository.findByIdAndIsActiveTrue(idNode.asLong())
+                        .ifPresent(p -> products.add(productMapper.mapToProductResponse(p)));
+            }
+            return products;
+        } catch (Exception e) {
+            log.debug("Không thể load products từ IDs: {}", productIdsJson);
+            return Collections.emptyList();
+        }
+    }
+
     private String buildProductContext(List<Product> products) {
         if (products.isEmpty()) {
             return "Hiện tại chưa có sản phẩm nào trên sàn.";
@@ -152,7 +296,6 @@ public class ChatbotService {
                     p.getCategory() != null ? p.getCategory().getName() : "N/A"
             ));
 
-            // Thêm giá từ variant đầu tiên (nếu có)
             if (p.getVariants() != null && !p.getVariants().isEmpty()) {
                 var firstVariant = p.getVariants().get(0);
                 sb.append(String.format(" | Giá: %s VND", firstVariant.getPrice().toPlainString()));
@@ -161,7 +304,6 @@ public class ChatbotService {
                 }
             }
 
-            // Thêm rating + sold count
             if (p.getAvgRating() != null) {
                 sb.append(String.format(" | Rating: %s", p.getAvgRating().toPlainString()));
             }
@@ -169,12 +311,10 @@ public class ChatbotService {
                 sb.append(String.format(" | Đã bán: %d", p.getSoldCount()));
             }
 
-            // Thêm mô tả ngắn (max 100 ký tự)
             if (p.getDescription() != null && !p.getDescription().isBlank()) {
                 String shortDesc = p.getDescription().length() > 100
                         ? p.getDescription().substring(0, 100) + "..."
                         : p.getDescription();
-                // Loại bỏ HTML tags nếu có
                 shortDesc = shortDesc.replaceAll("<[^>]*>", "").trim();
                 if (!shortDesc.isEmpty()) {
                     sb.append(String.format(" | Mô tả: %s", shortDesc));
@@ -186,9 +326,6 @@ public class ChatbotService {
         return sb.toString();
     }
 
-    /**
-     * Build tin nhắn enriched: user message + product context
-     */
     private String buildEnrichedMessage(String userMessage, String productContext) {
         return String.format("""
                 [THÔNG TIN SẢN PHẨM TRÊN SÀN]
@@ -199,9 +336,6 @@ public class ChatbotService {
                 """, productContext, userMessage);
     }
 
-    /**
-     * Parse JSON response từ Gemini → ChatbotResponse.
-     */
     private ChatbotResponse parseAiResponse(String aiResponse, List<Product> availableProducts) {
         try {
             JsonNode jsonNode = objectMapper.readTree(aiResponse);
@@ -215,10 +349,8 @@ public class ChatbotService {
                 }
             }
 
-            // Map product IDs → ProductResponse (chỉ lấy sản phẩm có trong danh sách available)
             List<ProductResponse> recommendedProducts = new ArrayList<>();
             if (!productIds.isEmpty()) {
-                // Tạo map để lookup nhanh
                 var productMap = availableProducts.stream()
                         .collect(Collectors.toMap(Product::getId, p -> p, (a, b) -> a));
 
@@ -229,7 +361,6 @@ public class ChatbotService {
                     }
                 }
 
-                // Nếu AI trả về ID không có trong context, thử query từ DB
                 if (recommendedProducts.size() < productIds.size()) {
                     List<Long> missingIds = productIds.stream()
                             .filter(id -> !productMap.containsKey(id))
@@ -248,7 +379,6 @@ public class ChatbotService {
 
         } catch (Exception e) {
             log.warn("Không thể parse JSON từ Gemini, trả về raw text: {}", e.getMessage());
-            // Fallback: trả về raw text nếu không parse được JSON
             return ChatbotResponse.builder()
                     .reply(aiResponse)
                     .recommendedProducts(Collections.emptyList())

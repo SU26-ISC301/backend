@@ -11,7 +11,7 @@ import java.util.List;
 @AllArgsConstructor
 public class ChatbotRequest {
     private String message;              // Tin nhắn của user
-    private List<ChatMessage> history;   // Lịch sử chat (optional, giữ trong frontend)
+    private List<ChatMessage> history;   // Lịch sử chat (optional, không cần gửi nữa — server tự load từ DB)
 
     @Data
     @NoArgsConstructor

@@ -12,6 +12,6 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ChatbotResponse {
-    private String reply;                              // Phản hồi text của AI
-    private List<ProductResponse> recommendedProducts; // Danh sách sản phẩm gợi ý (đầy đủ info để render card)
+    private String reply;                                  // Phản hồi text của AI
+    private List<ProductResponse> recommendedProducts;     // Danh sách sản phẩm gợi ý
 }
