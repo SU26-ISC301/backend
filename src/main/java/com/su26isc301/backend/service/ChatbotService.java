@@ -7,11 +7,12 @@ import com.su26isc301.backend.dto.response.ChatMessageResponse;
 import com.su26isc301.backend.dto.response.ChatbotResponse;
 import com.su26isc301.backend.dto.response.ProductResponse;
 import com.su26isc301.backend.entity.ChatMessage;
-import com.su26isc301.backend.entity.ChatSession;
 import com.su26isc301.backend.entity.Product;
 import com.su26isc301.backend.entity.Profile;
 import com.su26isc301.backend.mapper.ProductMapper;
-import com.su26isc301.backend.repository.*;
+import com.su26isc301.backend.repository.ChatMessageRepository;
+import com.su26isc301.backend.repository.ProductRepository;
+import com.su26isc301.backend.repository.ProfileRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -23,7 +24,7 @@ import java.util.stream.Collectors;
 
 /**
  * Service xử lý logic AI Chatbot giới thiệu sản phẩm.
- * Mỗi user chỉ có 1 session duy nhất — tự động tìm hoặc tạo.
+ * Mỗi user có 1 phiên chat duy nhất — tin nhắn lưu thẳng vào bảng chat_messages.
  */
 @Slf4j
 @Service
@@ -33,13 +34,12 @@ public class ChatbotService {
     private final GeminiApiClient geminiApiClient;
     private final ProductRepository productRepository;
     private final ProductMapper productMapper;
-    private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ProfileRepository profileRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final int MAX_PRODUCTS_CONTEXT = 30;
-    private static final int MAX_HISTORY_MESSAGES = 20; // Giới hạn lịch sử gửi cho AI
+    private static final int MAX_HISTORY_MESSAGES = 20;
 
     private static final String SYSTEM_PROMPT = """
             Bạn là trợ lý mua sắm AI của sàn thương mại điện tử 5Bros. 
@@ -69,7 +69,7 @@ public class ChatbotService {
             """;
 
     // ========================
-    // CHAT (gửi tin nhắn + lưu lịch sử)
+    // CHAT
     // ========================
 
     @Transactional
@@ -78,19 +78,16 @@ public class ChatbotService {
             Profile profile = profileRepository.findByEmail(userEmail)
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy profile"));
 
-            // Tìm session duy nhất của user, nếu chưa có thì tạo mới
-            ChatSession session = getOrCreateSingleSession(profile);
-
             // Lưu tin nhắn user vào DB
             ChatMessage userMessage = ChatMessage.builder()
-                    .chatSession(session)
+                    .profile(profile)
                     .role("user")
                     .content(request.getMessage())
                     .build();
             chatMessageRepository.save(userMessage);
 
-            // Load lịch sử từ DB
-            List<ChatbotRequest.ChatMessage> history = loadHistoryFromDb(session.getId());
+            // Load lịch sử từ DB (bỏ tin vừa save)
+            List<ChatbotRequest.ChatMessage> history = loadHistory(profile.getId());
 
             // Lấy sản phẩm active từ DB làm context
             List<Product> activeProducts = productRepository.searchActiveProductsPageable(
@@ -118,7 +115,7 @@ public class ChatbotService {
 
             // Lưu tin nhắn AI vào DB
             ChatMessage aiMessage = ChatMessage.builder()
-                    .chatSession(session)
+                    .profile(profile)
                     .role("model")
                     .content(response.getReply())
                     .recommendedProductIds(extractProductIdsJson(aiResponse))
@@ -164,21 +161,12 @@ public class ChatbotService {
     // LỊCH SỬ CHAT
     // ========================
 
-    /**
-     * Lấy toàn bộ lịch sử chat của user.
-     */
     @Transactional(readOnly = true)
     public List<ChatMessageResponse> getChatHistory(String userEmail) {
         Profile profile = profileRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy profile"));
 
-        List<ChatSession> sessions = chatSessionRepository.findByProfileIdOrderByUpdatedAtDesc(profile.getId());
-        if (sessions.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        ChatSession session = sessions.get(0); // Lấy session duy nhất
-        List<ChatMessage> messages = chatMessageRepository.findByChatSessionIdOrderByCreatedAtAsc(session.getId());
+        List<ChatMessage> messages = chatMessageRepository.findByProfileIdOrderByCreatedAtAsc(profile.getId());
 
         return messages.stream()
                 .map(m -> {
@@ -197,53 +185,26 @@ public class ChatbotService {
                 .toList();
     }
 
-    /**
-     * Xóa toàn bộ lịch sử chat của user (tạo session mới).
-     */
     @Transactional
     public void clearChatHistory(String userEmail) {
         Profile profile = profileRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy profile"));
 
-        List<ChatSession> sessions = chatSessionRepository.findByProfileIdOrderByUpdatedAtDesc(profile.getId());
-        chatSessionRepository.deleteAll(sessions); // Cascade xóa luôn messages
+        chatMessageRepository.deleteByProfileId(profile.getId());
     }
 
     // ========================
     // PRIVATE HELPERS
     // ========================
 
-    /**
-     * Tìm session duy nhất của user, hoặc tạo mới nếu chưa có.
-     */
-    private ChatSession getOrCreateSingleSession(Profile profile) {
-        List<ChatSession> sessions = chatSessionRepository.findByProfileIdOrderByUpdatedAtDesc(profile.getId());
-
-        if (!sessions.isEmpty()) {
-            return sessions.get(0); // Trả về session duy nhất
-        }
-
-        // Tạo session mới
-        ChatSession newSession = ChatSession.builder()
-                .profile(profile)
-                .title("Trò chuyện với 5Bros AI")
-                .build();
-
-        return chatSessionRepository.save(newSession);
-    }
-
-    /**
-     * Load lịch sử chat từ DB → format cho Gemini.
-     * Bỏ tin nhắn cuối (vừa save) và giới hạn số lượng.
-     */
-    private List<ChatbotRequest.ChatMessage> loadHistoryFromDb(Long sessionId) {
-        List<ChatMessage> allMessages = chatMessageRepository.findByChatSessionIdOrderByCreatedAtAsc(sessionId);
+    private List<ChatbotRequest.ChatMessage> loadHistory(UUID profileId) {
+        List<ChatMessage> allMessages = chatMessageRepository.findByProfileIdOrderByCreatedAtAsc(profileId);
 
         if (allMessages.size() <= 1) {
             return Collections.emptyList();
         }
 
-        // Lấy N tin nhắn gần nhất, bỏ tin cuối (tin mới nhất vừa save)
+        // Lấy N tin nhắn gần nhất, bỏ tin cuối (tin vừa save)
         List<ChatMessage> historyMessages = allMessages.subList(
                 Math.max(0, allMessages.size() - 1 - MAX_HISTORY_MESSAGES),
                 allMessages.size() - 1

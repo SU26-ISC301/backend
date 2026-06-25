@@ -5,10 +5,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.UUID;
 
 @Repository
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
 
-    // Lấy tất cả tin nhắn trong session, sắp xếp theo thời gian
-    List<ChatMessage> findByChatSessionIdOrderByCreatedAtAsc(Long chatSessionId);
+    // Lấy tất cả tin nhắn của user, sắp xếp theo thời gian
+    List<ChatMessage> findByProfileIdOrderByCreatedAtAsc(UUID profileId);
+
+    // Xóa tất cả tin nhắn của user
+    void deleteByProfileId(UUID profileId);
 }

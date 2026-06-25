@@ -8,7 +8,7 @@ import java.time.ZonedDateTime;
 
 @Entity
 @Table(name = "chat_messages", indexes = {
-    @Index(name = "idx_chat_messages_session_id", columnList = "chat_session_id")
+    @Index(name = "idx_chat_messages_profile_id", columnList = "profile_id")
 })
 @Getter
 @Setter
@@ -22,8 +22,8 @@ public class ChatMessage {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "chat_session_id", nullable = false)
-    private ChatSession chatSession;
+    @JoinColumn(name = "profile_id", nullable = false)
+    private Profile profile;
 
     @Column(name = "role", nullable = false)
     private String role; // "user" hoặc "model"
