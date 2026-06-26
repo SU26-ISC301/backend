@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ChatbotService {
+public class BuyerChatbotService {
 
     private final GeminiApiClient geminiApiClient;
     private final ProductRepository productRepository;
