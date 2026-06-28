@@ -14,7 +14,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
+import com.su26isc301.backend.dto.response.WalletTransactionResponse;
 
 @Slf4j
 @RestController
@@ -64,6 +66,13 @@ public class WalletController {
         Long vendorId = resolveVendorId(authentication);
         String status = walletService.checkPaymentResult(orderCode, vendorId);
         return ResponseEntity.ok(ApiResponse.success("Kiểm tra thanh toán", Map.of("status", status)));
+    }
+
+    @GetMapping("/transactions")
+    public ResponseEntity<ApiResponse<List<WalletTransactionResponse>>> getTransactions(Authentication authentication) {
+        Long vendorId = resolveVendorId(authentication);
+        List<WalletTransactionResponse> transactions = walletService.getTransactions(vendorId);
+        return ResponseEntity.ok(ApiResponse.success("Lấy danh sách biến động số dư thành công", transactions));
     }
 
     private Long resolveVendorId(Authentication authentication) {

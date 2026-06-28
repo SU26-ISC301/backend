@@ -16,9 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
+import com.su26isc301.backend.dto.response.WalletTransactionResponse;
 
 @Slf4j
 @Service
@@ -51,6 +54,27 @@ public class WalletService {
 
     public BigDecimal getBalance(Long vendorId) {
         return getOrCreateWallet(vendorId).getAvailableBalance();
+    }
+
+    public List<WalletTransactionResponse> getTransactions(Long vendorId) {
+        return transactionRepository.findByVendorIdOrderByCreatedAtDesc(vendorId)
+                .stream()
+                .map(tx -> WalletTransactionResponse.builder()
+                        .id(tx.getId())
+                        .transactionCode(tx.getTransactionCode())
+                        .amount(tx.getAmount())
+                        .type(tx.getType())
+                        .availableBefore(tx.getAvailableBefore())
+                        .availableAfter(tx.getAvailableAfter())
+                        .lockedBefore(tx.getLockedBefore())
+                        .lockedAfter(tx.getLockedAfter())
+                        .referenceType(tx.getReferenceType())
+                        .referenceId(tx.getReferenceId())
+                        .paymentTransactionId(tx.getPaymentTransactionId())
+                        .status(tx.getStatus())
+                        .createdAt(tx.getCreatedAt())
+                        .build())
+                .collect(Collectors.toList());
     }
 
     @Transactional
