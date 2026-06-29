@@ -41,9 +41,11 @@ public class PromotionController {
     public ResponseEntity<Void> recordImpression(
             @PathVariable Long id,
             Authentication authentication,
-            @RequestBody ClickPromotionRequest request) {
+            @RequestBody(required = false) ClickPromotionRequest request) {
         java.util.UUID viewerId = resolveViewerId(authentication);
-        promotionService.recordImpression(id, request.getSessionId(), viewerId, request.getSurface());
+        String sessionId = request != null ? request.getSessionId() : null;
+        String surface = request != null ? request.getSurface() : null;
+        promotionService.recordImpression(id, sessionId, viewerId, surface);
         return ResponseEntity.ok().build();
     }
 
@@ -51,9 +53,11 @@ public class PromotionController {
     public ResponseEntity<Void> recordClick(
             @PathVariable Long id,
             Authentication authentication,
-            @RequestBody ClickPromotionRequest request) {
+            @RequestBody(required = false) ClickPromotionRequest request) {
         java.util.UUID viewerId = resolveViewerId(authentication);
-        promotionService.recordClick(id, request.getSessionId(), viewerId, request.getSurface());
+        String sessionId = request != null ? request.getSessionId() : null;
+        String surface = request != null ? request.getSurface() : null;
+        promotionService.recordClick(id, sessionId, viewerId, surface);
         return ResponseEntity.ok().build();
     }
 

@@ -35,10 +35,10 @@ public class PromotionClick {
     @Column(name = "session_id")
     private String sessionId;
 
-    @Column(name = "roi_amount_snapshot", nullable = false)
+    @Column(name = "roi_amount_snapshot")
     private BigDecimal roiAmountSnapshot;
 
-    @Column(name = "is_customer_click", nullable = false)
+    @Column(name = "is_customer_click")
     private Boolean isCustomerClick;
 
     @Column(name = "wallet_transaction_id")
@@ -47,7 +47,7 @@ public class PromotionClick {
     @Column(name = "surface")
     private String surface;
 
-    @Column(name = "is_charged", nullable = false)
+    @Column(name = "is_charged")
     @Builder.Default
     private Boolean isCharged = true;
 

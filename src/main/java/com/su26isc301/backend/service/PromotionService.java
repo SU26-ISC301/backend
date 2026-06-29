@@ -135,8 +135,11 @@ public class PromotionService {
         }
 
         BigDecimal chargeAmount = promotion.getRoiPerClick();
-
         if (promotion.getRemainingBudget().compareTo(chargeAmount) < 0) {
+            chargeAmount = promotion.getRemainingBudget();
+        }
+
+        if (chargeAmount.compareTo(BigDecimal.ZERO) <= 0) {
             promotion.setStatus("EXHAUSTED");
             promotionRepository.save(promotion);
             logClickAsInvalid(promotion, viewerId, sessionId, surface, "NO_BUDGET");
