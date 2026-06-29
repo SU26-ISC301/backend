@@ -163,6 +163,8 @@ public class PromotionService {
                 .viewer(viewer)
                 .sessionId(sessionId)
                 .roiAmountSnapshot(chargeAmount)
+                .cpcAmount(BigDecimal.ZERO)
+                .reputationScoreSnapshot(new BigDecimal("30"))
                 .isCustomerClick(true)
                 .isCharged(true)
                 .surface(surface)
@@ -171,6 +173,7 @@ public class PromotionService {
     }
 
     private void logClickAsInvalid(PostPromotion promotion, java.util.UUID viewerId, String sessionId, String surface, String reason) {
+        log.warn("Invalid click on promotion {}: viewerId={}, sessionId={}, reason={}", promotion.getId(), viewerId, sessionId, reason);
         Profile viewer = null;
         if (viewerId != null) {
             viewer = profileRepository.findById(viewerId).orElse(null);
@@ -181,6 +184,8 @@ public class PromotionService {
                 .viewer(viewer)
                 .sessionId(sessionId)
                 .roiAmountSnapshot(promotion.getRoiPerClick() != null ? promotion.getRoiPerClick() : BigDecimal.ZERO)
+                .cpcAmount(BigDecimal.ZERO)
+                .reputationScoreSnapshot(new BigDecimal("30"))
                 .isCustomerClick(false)
                 .isCharged(false)
                 .invalidReason(reason)

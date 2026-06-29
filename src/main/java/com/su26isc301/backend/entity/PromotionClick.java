@@ -38,6 +38,14 @@ public class PromotionClick {
     @Column(name = "roi_amount_snapshot")
     private BigDecimal roiAmountSnapshot;
 
+    @Column(name = "cpc_amount")
+    @Builder.Default
+    private BigDecimal cpcAmount = BigDecimal.ZERO;
+
+    @Column(name = "reputation_score_snapshot")
+    @Builder.Default
+    private BigDecimal reputationScoreSnapshot = new BigDecimal("30");
+
     @Column(name = "is_customer_click")
     private Boolean isCustomerClick;
 

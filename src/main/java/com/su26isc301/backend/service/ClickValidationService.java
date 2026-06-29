@@ -15,6 +15,10 @@ public class ClickValidationService {
     private final PromotionClickRepository clickRepository;
 
     public String validateClick(PostPromotion promotion, String sessionId, Profile viewer) {
+        if (viewer == null) {
+            return "NOT_LOGGED_IN";
+        }
+
         // Rule 1: Self-click
         if (viewer != null && promotion.getVendor().getProfile().getId().equals(viewer.getId())) {
             return "SELF_CLICK";
