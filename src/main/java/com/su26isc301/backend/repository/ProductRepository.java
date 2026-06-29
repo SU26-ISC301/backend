@@ -27,13 +27,20 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             @org.springframework.data.repository.query.Param("categoryId") Long categoryId,
             @org.springframework.data.repository.query.Param("vendorId") Long vendorId);
 
-    @org.springframework.data.jpa.repository.Query("SELECT p FROM Product p " +
+    @org.springframework.data.jpa.repository.Query(value = "SELECT p FROM Product p " +
+           "LEFT JOIN FETCH p.vendor " +
+           "LEFT JOIN FETCH p.category " +
            "LEFT JOIN PostPromotion pp ON pp.product = p AND pp.status = 'ACTIVE' AND CURRENT_TIMESTAMP BETWEEN pp.startDate AND pp.endDate " +
            "WHERE p.isActive = true AND UPPER(p.status) = 'ACTIVE' " +
            "AND (COALESCE(:categoryId, 0) = 0 OR p.category.id = :categoryId) " +
            "AND (COALESCE(:vendorId, 0) = 0 OR p.vendor.id = :vendorId) " +
            "AND (COALESCE(:keyword, '') = '' OR LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
-           "ORDER BY pp.roiPerClick DESC NULLS LAST, p.createdAt DESC")
+           "ORDER BY pp.roiPerClick DESC NULLS LAST, p.createdAt DESC",
+           countQuery = "SELECT count(p) FROM Product p " +
+           "WHERE p.isActive = true AND UPPER(p.status) = 'ACTIVE' " +
+           "AND (COALESCE(:categoryId, 0) = 0 OR p.category.id = :categoryId) " +
+           "AND (COALESCE(:vendorId, 0) = 0 OR p.vendor.id = :vendorId) " +
+           "AND (COALESCE(:keyword, '') = '' OR LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%')))")
     org.springframework.data.domain.Page<Product> searchActiveProductsPageable(
             @org.springframework.data.repository.query.Param("keyword") String keyword,
             @org.springframework.data.repository.query.Param("categoryId") Long categoryId,

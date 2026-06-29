@@ -14,5 +14,10 @@ import java.util.Optional;
 public interface WalletTransactionRepository extends JpaRepository<WalletTransaction, Long> {
     List<WalletTransaction> findByVendorIdOrderByCreatedAtDesc(Long vendorId);
 
+    @Query("SELECT SUM(w.amount) FROM WalletTransaction w WHERE w.vendor.id = :vendorId AND w.type = 'TOP_UP' AND w.status = 'SUCCESS'")
+    java.math.BigDecimal sumTotalDeposited(@org.springframework.data.repository.query.Param("vendorId") Long vendorId);
+
+    @Query("SELECT SUM(w.amount) FROM WalletTransaction w WHERE w.vendor.id = :vendorId AND w.amount < 0 AND w.status = 'SUCCESS'")
+    java.math.BigDecimal sumTotalSpent(@org.springframework.data.repository.query.Param("vendorId") Long vendorId);
 
 }
