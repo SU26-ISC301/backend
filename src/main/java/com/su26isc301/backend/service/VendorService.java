@@ -127,18 +127,42 @@ public class VendorService {
         Vendor vendor = vendorRepository.findById(vendorId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy cửa hàng với ID: " + vendorId));
 
-        vendor.setShopName(request.getShopName());
-        vendor.setDescription(request.getDescription());
-        vendor.setLogoUrl(request.getLogoUrl());
-        vendor.setEmail(request.getEmail());
-        vendor.setPhone(request.getPhone());
-        vendor.setCategory(categoryValue(request.getCategory()));
-        vendor.setStatus(request.getStatus());
-        vendor.setCccd(request.getCccd());
-        vendor.setTaxCode(request.getTaxCode());
-        vendor.setCccdFrontImageUrl(request.getCccdFrontImageUrl());
-        vendor.setCccdBackImageUrl(request.getCccdBackImageUrl());
-        vendor.setFaceImageUrl(request.getFaceImageUrl());
+        if (request.getShopName() != null) {
+            vendor.setShopName(request.getShopName());
+        }
+        if (request.getDescription() != null) {
+            vendor.setDescription(request.getDescription());
+        }
+        if (request.getLogoUrl() != null) {
+            vendor.setLogoUrl(request.getLogoUrl());
+        }
+        if (request.getEmail() != null) {
+            vendor.setEmail(request.getEmail());
+        }
+        if (request.getPhone() != null) {
+            vendor.setPhone(request.getPhone());
+        }
+        if (request.getCategory() != null) {
+            vendor.setCategory(categoryValue(request.getCategory()));
+        }
+        if (request.getStatus() != null) {
+            vendor.setStatus(request.getStatus());
+        }
+        if (request.getCccd() != null) {
+            vendor.setCccd(request.getCccd());
+        }
+        if (request.getTaxCode() != null) {
+            vendor.setTaxCode(request.getTaxCode());
+        }
+        if (request.getCccdFrontImageUrl() != null) {
+            vendor.setCccdFrontImageUrl(request.getCccdFrontImageUrl());
+        }
+        if (request.getCccdBackImageUrl() != null) {
+            vendor.setCccdBackImageUrl(request.getCccdBackImageUrl());
+        }
+        if (request.getFaceImageUrl() != null) {
+            vendor.setFaceImageUrl(request.getFaceImageUrl());
+        }
 
         return vendorRepository.save(vendor);
     }
