@@ -73,6 +73,29 @@ public class PromotionController {
         }
     }
 
+    @GetMapping("/mine")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('VENDOR')")
+    public ResponseEntity<ApiResponse<java.util.List<com.su26isc301.backend.dto.response.PromotionSummaryResponse>>> getMyPromotions(
+            Authentication authentication) {
+        String email = String.valueOf(authentication.getPrincipal());
+        java.util.List<com.su26isc301.backend.dto.response.PromotionSummaryResponse> response = promotionService.getMyPromotions(email);
+        return ResponseEntity.ok(ApiResponse.success("Lấy danh sách chiến dịch thành công", response));
+    }
+
+    @GetMapping("/{id}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('VENDOR')")
+    public ResponseEntity<ApiResponse<com.su26isc301.backend.dto.response.PromotionDetailResponse>> getPromotionDetail(
+            @PathVariable Long id,
+            Authentication authentication) {
+        try {
+            String email = String.valueOf(authentication.getPrincipal());
+            com.su26isc301.backend.dto.response.PromotionDetailResponse response = promotionService.getPromotionDetail(id, email);
+            return ResponseEntity.ok(ApiResponse.success("Lấy chi tiết chiến dịch thành công", response));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
     private Long resolveVendorId(Authentication authentication) {
         if (authentication == null) throw new RuntimeException("Chưa đăng nhập");
         String email = String.valueOf(authentication.getPrincipal());

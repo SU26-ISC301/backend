@@ -216,4 +216,73 @@ public class PromotionService {
         promotion.setStopReason(reason);
         return promotionRepository.save(promotion);
     }
+
+    @Transactional(readOnly = true)
+    public java.util.List<com.su26isc301.backend.dto.response.PromotionSummaryResponse> getMyPromotions(String email) {
+        Vendor vendor = vendorRepository.findByProfileEmail(email)
+                .orElseThrow(() -> new RuntimeException("Vendor not found"));
+
+        return promotionRepository.findByVendorId(vendor.getId()).stream().map(promo -> {
+            String imageUrl = null;
+            if (promo.getProduct() != null && promo.getProduct().getMediaList() != null) {
+                imageUrl = promo.getProduct().getMediaList().stream()
+                        .filter(m -> Boolean.TRUE.equals(m.getIsMain()))
+                        .findFirst()
+                        .map(com.su26isc301.backend.entity.ProductMedia::getMediaUrl)
+                        .orElse(promo.getProduct().getMediaList().isEmpty() ? null : promo.getProduct().getMediaList().get(0).getMediaUrl());
+            }
+
+            return com.su26isc301.backend.dto.response.PromotionSummaryResponse.builder()
+                    .id(promo.getId())
+                    .productId(promo.getProduct().getId())
+                    .productName(promo.getProduct().getName())
+                    .productImage(imageUrl)
+                    .productSlug(promo.getProduct().getSlug())
+                    .spentAmount(promo.getSpentAmount())
+                    .remainingBudget(promo.getRemainingBudget())
+                    .status(promo.getStatus())
+                    .startDate(promo.getStartDate())
+                    .endDate(promo.getEndDate())
+                    .build();
+        }).collect(java.util.stream.Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public com.su26isc301.backend.dto.response.PromotionDetailResponse getPromotionDetail(Long id, String email) {
+        Vendor vendor = vendorRepository.findByProfileEmail(email)
+                .orElseThrow(() -> new RuntimeException("Vendor not found"));
+
+        PostPromotion promo = promotionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy chiến dịch"));
+
+        if (!promo.getVendor().getId().equals(vendor.getId())) {
+            throw new RuntimeException("Bạn không có quyền xem thông tin chiến dịch này");
+        }
+
+        String imageUrl = null;
+        if (promo.getProduct() != null && promo.getProduct().getMediaList() != null) {
+            imageUrl = promo.getProduct().getMediaList().stream()
+                    .filter(m -> Boolean.TRUE.equals(m.getIsMain()))
+                    .findFirst()
+                    .map(com.su26isc301.backend.entity.ProductMedia::getMediaUrl)
+                    .orElse(promo.getProduct().getMediaList().isEmpty() ? null : promo.getProduct().getMediaList().get(0).getMediaUrl());
+        }
+
+        return com.su26isc301.backend.dto.response.PromotionDetailResponse.builder()
+                .id(promo.getId())
+                .productId(promo.getProduct().getId())
+                .productName(promo.getProduct().getName())
+                .productImage(imageUrl)
+                .productSlug(promo.getProduct().getSlug())
+                .initialBudget(promo.getInitialBudget())
+                .spentAmount(promo.getSpentAmount())
+                .remainingBudget(promo.getRemainingBudget())
+                .roiPerClick(promo.getRoiPerClick())
+                .customerClicks(promo.getCustomerClicks())
+                .estimatedClicks(promo.getEstimatedClicks())
+                .status(promo.getStatus())
+                .startDate(promo.getStartDate())
+                .endDate(promo.getEndDate())
+                .build();
+    }
 }
