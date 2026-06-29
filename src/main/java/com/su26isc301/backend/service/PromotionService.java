@@ -154,8 +154,6 @@ public class PromotionService {
         
         promotionRepository.save(promotion);
 
-        walletService.deductGeneric(promotion.getVendor().getId(), chargeAmount, "PROMOTION_CLICK_CHARGE", promotion.getId());
-
         PromotionClick click = PromotionClick.builder()
                 .promotion(promotion)
                 .product(promotion.getProduct())
