@@ -27,6 +27,8 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+import com.su26isc301.backend.enums.ViolationStatus;
+
 @Service
 @RequiredArgsConstructor
 public class ProductService {
@@ -40,6 +42,7 @@ public class ProductService {
     private final SubscriptionService subscriptionService;
     private final VendorSubscriptionPlanRepository subscriptionPlanRepository;
     private final PostPromotionRepository postPromotionRepository;
+    private final SellerViolationRepository sellerViolationRepository;
 
     // Chống spam view: Lưu "IP:productId" -> thời điểm xem gần nhất
     private static final long VIEW_COOLDOWN_MS = 30 * 60 * 1000; // 30 phút
@@ -52,6 +55,14 @@ public class ProductService {
 
         Vendor vendor = vendorRepository.findByProfile(profile)
                 .orElseThrow(() -> new ForbiddenAccessException("Tài khoản này chưa đăng ký gian hàng Vendor"));
+
+        // BR-08: RESTRICT_LISTING check
+        boolean isRestricted = sellerViolationRepository.findByVendorIdAndStatusAndViolationType(vendor.getId(), ViolationStatus.ACTIVE, "RESTRICT_LISTING")
+                .stream()
+                .anyMatch(v -> v.getExpiresAt() == null || v.getExpiresAt().isAfter(ZonedDateTime.now()));
+        if (isRestricted) {
+            throw new ForbiddenAccessException("Tài khoản của bạn đang bị giới hạn đăng bán sản phẩm mới do có vi phạm chưa xử lý xong.");
+        }
 
         Category category = categoryRepository.findById(request.getCategoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy danh mục với ID: " + request.getCategoryId()));
