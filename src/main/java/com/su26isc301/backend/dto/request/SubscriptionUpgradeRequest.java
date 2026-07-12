@@ -10,7 +10,9 @@ public class SubscriptionUpgradeRequest {
     private String planType;
 
     /**
-     * 'payos' hoặc 'bank_transfer'
+     * 'payos' hoặc 'bank_transfer' hoặc 'wallet'
      */
     private String paymentMethod;
+
+    private String walletPin;
 }

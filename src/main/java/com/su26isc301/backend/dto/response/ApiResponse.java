@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class ApiResponse<T> {
     private boolean success;   // Trạng thái (true: thành công, false: thất bại)
+    private String code;       // Mã lỗi nghiệp vụ (ví dụ: "PIN_REQUIRED")
     private String message;    // Thông điệp phản hồi (ví dụ: "Đăng nhập thành công")
     private T data;            // Dữ liệu trả về (có thể là Object, List, String, Integer hoặc null)
 
@@ -36,6 +37,16 @@ public class ApiResponse<T> {
     public static <T> ApiResponse<T> error(String message) {
         return ApiResponse.<T>builder()
                 .success(false)
+                .message(message)
+                .data(null)
+                .build();
+    }
+
+    // Hàm tiện ích để tạo nhanh phản hồi THẤT BẠI / LỖI kèm mã lỗi nghiệp vụ
+    public static <T> ApiResponse<T> error(String code, String message) {
+        return ApiResponse.<T>builder()
+                .success(false)
+                .code(code)
                 .message(message)
                 .data(null)
                 .build();

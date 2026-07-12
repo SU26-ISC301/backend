@@ -22,9 +22,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -59,6 +61,8 @@ public class SubscriptionService {
     private final PayOSService payOSService;
     private final OtpService otpService;
     private final AuditLogService auditLogService;
+    private final WalletPinService walletPinService;
+    private final WalletService walletService;
 
     @Value("${app.mail.sender}")
     private String fromEmail;
@@ -182,13 +186,45 @@ public class SubscriptionService {
     // ─── 5. Tạo link thanh toán PayOS ────────────────────────────────────────
 
     @Transactional
-    public PaymentLinkResponse createUpgradePaymentLink(Long vendorId, String planType, String paymentMethod) {
+    public PaymentLinkResponse createUpgradePaymentLink(Long vendorId, String planType, String paymentMethod, String walletPin) {
         validatePlanType(planType);
 
         Vendor vendor = vendorRepository.findById(vendorId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy vendor"));
 
         long amount = getPrice(planType);
+
+        if ("wallet".equalsIgnoreCase(paymentMethod)) {
+            // 1. Xác thực mã PIN ví
+            walletPinService.verifyWalletPin(vendorId, walletPin);
+
+            // 2. Trừ tiền ví nội bộ (đồng thời ghi Wallet Transaction trong deductGeneric)
+            BigDecimal price = BigDecimal.valueOf(amount);
+            walletService.deductGeneric(vendorId, price, "SUBSCRIPTION_UPGRADE", vendorId);
+
+            // 3. Lưu VendorSubscriptionTransaction trạng thái paid luôn
+            VendorSubscriptionTransaction transaction = VendorSubscriptionTransaction.builder()
+                    .vendor(vendor)
+                    .planType(planType)
+                    .amount(amount)
+                    .paymentMethod("wallet")
+                    .paymentRef("WLT-SUB-" + UUID.randomUUID().toString())
+                    .status("paid")
+                    .paidAt(ZonedDateTime.now())
+                    .build();
+            transaction = transactionRepository.save(transaction);
+
+            // 4. Kích hoạt/nâng cấp gói ngay lập tức
+            activatePlan(transaction);
+
+            return PaymentLinkResponse.builder()
+                    .paymentUrl(null)
+                    .orderCode(transaction.getPaymentRef())
+                    .amount(amount)
+                    .planType(planType)
+                    .transactionId(transaction.getId())
+                    .build();
+        }
 
         // Tạo orderCode duy nhất (số nguyên dương, max 9 chữ số theo PayOS)
         long orderCode = Math.abs(System.currentTimeMillis() % 1_000_000_000L)

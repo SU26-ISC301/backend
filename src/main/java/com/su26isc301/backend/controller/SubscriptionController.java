@@ -53,7 +53,7 @@ public class SubscriptionController {
         try {
             Long vendorId = resolveVendorId(authentication);
             PaymentLinkResponse link = subscriptionService.createUpgradePaymentLink(
-                    vendorId, request.getPlanType(), request.getPaymentMethod()
+                    vendorId, request.getPlanType(), request.getPaymentMethod(), request.getWalletPin()
             );
             return ResponseEntity.ok(ApiResponse.success("Tạo link thanh toán thành công", link));
         } catch (RuntimeException e) {
