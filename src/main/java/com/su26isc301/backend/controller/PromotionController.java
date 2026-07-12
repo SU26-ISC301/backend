@@ -30,7 +30,7 @@ public class PromotionController {
         try {
             Long vendorId = resolveVendorId(authentication);
             PostPromotion promo = promotionService.createPromotion(
-                    vendorId, request.getProductId(), request.getPromotionAmount(), request.getRoiPerClick(), request.getStartDate(), request.getEndDate());
+                    vendorId, request.getProductId(), request.getPromotionAmount(), request.getRoiPerClick(), request.getStartDate(), request.getEndDate(), request.getWalletPin());
             return ResponseEntity.ok(ApiResponse.success("Tạo chiến dịch quảng cáo thành công", promo.getId()));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));

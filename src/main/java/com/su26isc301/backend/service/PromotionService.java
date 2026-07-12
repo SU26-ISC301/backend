@@ -26,9 +26,13 @@ public class PromotionService {
     private final WalletService walletService;
     private final ClickValidationService clickValidationService;
     private final VendorWalletRepository walletRepository;
+    private final WalletPinService walletPinService;
 
     @Transactional
-    public PostPromotion createPromotion(Long vendorId, Long productId, BigDecimal promotionAmount, BigDecimal roiPerClick, ZonedDateTime startDate, ZonedDateTime endDate) {
+    public PostPromotion createPromotion(Long vendorId, Long productId, BigDecimal promotionAmount, BigDecimal roiPerClick, ZonedDateTime startDate, ZonedDateTime endDate, String walletPin) {
+        // 1. Xác thực mã PIN ví của người bán
+        walletPinService.verifyWalletPin(vendorId, walletPin);
+
         Vendor vendor = vendorRepository.findById(vendorId)
                 .orElseThrow(() -> new RuntimeException("Vendor not found"));
         Product product = productRepository.findById(productId)

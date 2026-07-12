@@ -71,5 +71,23 @@ public class Vendor {
     @Column(name = "face_image_url")
     private String faceImageUrl;
 
+    @Column(name = "wallet_pin_hash")
+    private String walletPinHash;
 
+    @Column(name = "wallet_pin_enabled")
+    @Builder.Default
+    private Boolean walletPinEnabled = false;
+
+    @Column(name = "wallet_pin_created_at")
+    private ZonedDateTime walletPinCreatedAt;
+
+    @Column(name = "wallet_pin_updated_at")
+    private ZonedDateTime walletPinUpdatedAt;
+
+    @Column(name = "wallet_pin_failed_attempts")
+    @Builder.Default
+    private Integer walletPinFailedAttempts = 0;
+
+    @Column(name = "wallet_pin_locked_until")
+    private ZonedDateTime walletPinLockedUntil;
 }

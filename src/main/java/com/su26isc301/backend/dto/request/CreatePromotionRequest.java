@@ -10,4 +10,5 @@ public class CreatePromotionRequest {
     private BigDecimal roiPerClick;
     private java.time.ZonedDateTime startDate;
     private java.time.ZonedDateTime endDate;
+    private String walletPin;
 }
