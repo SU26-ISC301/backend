@@ -156,13 +156,11 @@ public class WalletService {
         if ("FAILED".equals(order.getStatus()) || "CANCELLED".equals(order.getStatus())) return "cancelled";
 
         if ("payos".equalsIgnoreCase(order.getPaymentMethod())) {
-            // [LOCAL TEST] Tạm tắt gọi PayOS, ép thành công luôn
-            // String payosStatus = payOSService.getPaymentStatus(Long.parseLong(orderCode));
-            String payosStatus = "PAID";
+            String payosStatus = payOSService.getPaymentStatus(Long.parseLong(orderCode));
             if ("PAID".equals(payosStatus)) {
                 activateTopUp(order);
                 return "paid";
-            } else if ("CANCELLED".equals(payosStatus) || "EXPIRED".equals(payosStatus)) {
+            } else if ("CANCELLED".equals(payosStatus) || "EXPIRED".equals(payosStatus) || "FAILED".equals(payosStatus)) {
                 order.setStatus("FAILED");
                 topupOrderRepository.save(order);
                 return "cancelled";
@@ -172,8 +170,10 @@ public class WalletService {
     }
 
     @Transactional
-    protected void activateTopUp(WalletTopupOrder order) {
-        if ("SUCCESS".equals(order.getStatus())) return;
+    public void activateTopUp(WalletTopupOrder order) {
+        if (!"PENDING_PAYMENT".equals(order.getStatus())) {
+            return;
+        }
 
         VendorWallet wallet = walletRepository.findByVendorIdForUpdate(order.getVendor().getId())
                 .orElseGet(() -> getOrCreateWallet(order.getVendor().getId()));
