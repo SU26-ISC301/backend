@@ -79,8 +79,8 @@ public class WalletService {
 
     @Transactional
     public PaymentLinkResponse createTopUpPaymentLink(Long vendorId, BigDecimal amount, String paymentMethod) {
-        if (amount.compareTo(new BigDecimal("10000")) < 0) {
-            throw new RuntimeException("Số tiền nạp tối thiểu là 10.000 VNĐ");
+        if (amount.compareTo(new BigDecimal("5000")) < 0) {
+            throw new RuntimeException("Số tiền nạp tối thiểu là 5.000 VNĐ");
         }
 
         Vendor vendor = vendorRepository.findById(vendorId)

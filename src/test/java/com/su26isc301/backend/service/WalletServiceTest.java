@@ -174,4 +174,49 @@ public class WalletServiceTest {
         // Kỳ vọng: chỉ hiển thị số dư khả dụng thật, không cộng các lệnh nạp PENDING
         assertEquals(new BigDecimal("150000"), balance);
     }
+
+    @Test
+    void createTopUpPaymentLink_amountUnder5000_throwsException() {
+        BigDecimal amount = new BigDecimal("4999");
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            walletService.createTopUpPaymentLink(1L, amount, "payos");
+        });
+        assertEquals("Số tiền nạp tối thiểu là 5.000 VNĐ", exception.getMessage());
+    }
+
+    @Test
+    void createTopUpPaymentLink_amountEquals5000_succeeds() {
+        when(vendorRepository.findById(1L)).thenReturn(Optional.of(vendor));
+        when(topupOrderRepository.save(any(WalletTopupOrder.class))).thenAnswer(invocation -> {
+            WalletTopupOrder o = invocation.getArgument(0);
+            o.setId(20L);
+            return o;
+        });
+        when(payOSService.createPaymentLink(anyLong(), eq(5000L), anyString())).thenReturn("http://payos.checkout/url/5000");
+
+        BigDecimal amount = new BigDecimal("5000");
+        PaymentLinkResponse response = walletService.createTopUpPaymentLink(1L, amount, "payos");
+
+        assertNotNull(response);
+        assertEquals("http://payos.checkout/url/5000", response.getPaymentUrl());
+        assertEquals(5000L, response.getAmount());
+    }
+
+    @Test
+    void createTopUpPaymentLink_amountEquals10000_succeeds() {
+        when(vendorRepository.findById(1L)).thenReturn(Optional.of(vendor));
+        when(topupOrderRepository.save(any(WalletTopupOrder.class))).thenAnswer(invocation -> {
+            WalletTopupOrder o = invocation.getArgument(0);
+            o.setId(30L);
+            return o;
+        });
+        when(payOSService.createPaymentLink(anyLong(), eq(10000L), anyString())).thenReturn("http://payos.checkout/url/10000");
+
+        BigDecimal amount = new BigDecimal("10000");
+        PaymentLinkResponse response = walletService.createTopUpPaymentLink(1L, amount, "payos");
+
+        assertNotNull(response);
+        assertEquals("http://payos.checkout/url/10000", response.getPaymentUrl());
+        assertEquals(10000L, response.getAmount());
+    }
 }
